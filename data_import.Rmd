@@ -1,5 +1,5 @@
 ---
-title: "Data import"
+title: "V2 Analysis"
 author: "Michelle"
 date: "April 19, 2024"
 output:
@@ -8,3 +8,27 @@ output:
     toc_float: true
 ---
 
+Check all files that have carried over from the backup
+Select most complete dataset and import here
+Verify the following features
+- years available
+- countries available
+- variables available
+
+Graph: FDI graphed against passengers (controlling for deaths) 
+identify outliers
+comment on shape of data
+
+Graph: FDI graphed against deaths (controlling for FDI).
+identify outliers
+comment on shape of data
+
+Consider: what models would be best?
+
+Regenerate DID to verify
+- comment on any changes and why. 
+- is this acceptable, are we good to move forward? 
+
+Report results with both 25+ and 50+ ACLED deaths. 
+
+Regressions with more lags. Focus on natural logs...
