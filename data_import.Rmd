@@ -7,15 +7,61 @@ output:
     toc: true
     toc_float: true
 ---
+---
 
-Check all files that have carried over from the backup
-Select most complete dataset and import here
+Check all files that have carried over from the backup.
+
+Data:
+master_dataset: N=619065, long format, 1960-2023
+scm_data: N=1820, wide format, 2010-2023 — 00s appear for 2023 observations
+scm_data2: N=1440, wide format, 2010-2022 (except Afghanistan, which ends at 2021?) — no NAs
+—> copying scm_data2 to new data folder
+
+---
+
+Select most complete dataset (scm_data2) and import here
+```{r data1}
+library(readr)
+data <- read_csv("data/scm_data2 copy.csv")
+```
+
 Verify the following features
 - years available
 - countries available
 - variables available
+```{r data2}
+library(dplyr)
+
+data <- data %>%
+  select(-flights.spike.true, -passengers.spike.true, -Intervention, -`...1`)
+
+unique_years <- unique(data$year)
+unique_countries <- unique(data$Country.Name)
+variable_list <- names(data)
+
+unique_years
+unique_countries
+variable_list
+```
+
+We're missing some countries and variables that didn't carry over. I fixed this before, but didn't back it up. Let's pause and take care of that.
+- GDP in international dollars 2017
+
+Missing some key variables:
+- total FDI
+- logs/lags on some variables (can be generated during the analysis)
+```{r data3}
+
+```
+
 
 Graph: FDI graphed against passengers (controlling for deaths) 
+```{r}
+ggplot(data, aes(x = passengers.in.change.pct, y = FDI)) +
+  geom_point() +
+  labs(x = "Passengers Change (%)", y = "FDI (Foreign Direct Investment)")
+```
+
 identify outliers
 comment on shape of data
 

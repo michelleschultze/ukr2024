@@ -1,0 +1,550 @@
+---
+title: 'SCM'
+author: "Michelle Schultze"
+date: "2024-02-02"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+
+#install.packages("readr", repos = "http://cran.us.r-project.org")
+#install.packages("microsynth", repos = "http://cran.us.r-project.org")
+#install.packages("LowRankQP", repos = "http://cran.us.r-project.org")
+library("readr")
+library("microsynth")
+library("LowRankQP")
+
+setwd('/Users/michelleschultze/ukr2024')
+data_master <- read_csv("data/master_dataset copy.csv")
+```
+
+We missed changing some names!
+```{r}
+#search df
+data_master %>%
+  filter(grepl('russia', Country.Name))
+
+data_master <- data_master %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Russia" ~ "Russian Federation",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha", "U.S.S.R.", "West Germany")))
+# "grenada and south grenadines" overlap between country observations -- drop to be safe
+# WB does not recognize Taiwan unfortunately
+```
+
+
+Add a "spike in flights" variable to standardize airport/flight reopenings
+```{r var-crunching}
+set.seed(1)
+
+#scouting out variables to include.
+data_master %>%
+  filter(grepl('GDP', Indicator.Name)) %>%
+  group_by(Indicator.Name) %>%
+  summarize(n = n()) %>%
+  print(n = 34)
+data_master %>%
+  filter(grepl('Foreign', Indicator.Name)) %>%
+  group_by(Indicator.Name) %>%
+  summarize(n = n())
+
+#Selected variables that we may feed into the model: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "PPP conversion factor, GDP (LCU per international $)", "Services, value added (% of GDP)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
+
+#Most economic important variables to start with: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
+
+#Generate a "big spike in flights into the country" variable, which we'll call "flights_spike_true". Let's say, if flights spike at least 2x from the previous month. We'll generate the same for passengers.
+data_master <- data_master %>%
+  filter(Indicator.Name == "passengers_in_change_pct" | Indicator.Name == "flights_in_change_pct") %>%
+  mutate(passengers_spike_true = case_when((Indicator.Name == "passengers_in_change_pct") & (value >= 5) ~ 1,
+                                        (Indicator.Name == "passengers_in_change_pct") & (value <= 5) ~ 0),
+         flights_spike_true = case_when((Indicator.Name == "flights_in_change_pct") & (value >= 5) ~ 1,
+                                        (Indicator.Name == "flights_in_change_pct") & (value <= 5) ~ 0)) %>%
+  select(Country.Name, year, passengers_spike_true, flights_spike_true) %>%
+  pivot_longer(cols = 3:4, names_to = "Indicator.Name") %>%
+  filter(!is.na(value)) %>%
+  full_join(select(data_master, 2:5))
+
+data_master <- data_master %>%
+  select(Country.Name, year, Indicator.Name, value) 
+
+##CHECK VALIDITY OF THIS MEASURE##
+#filter and then check those labeled 1 and 1 
+data_master %>%
+  filter((Indicator.Name == "passengers_spike_true" | Indicator.Name == "flights_spike_true") & value == 1)
+#3222 observations where passengers/flights increased by more than a factor of 5 in the year
+#I'd say that's the sort of spike that would be correlated with an airport reopening
+
+#Also I noticed later that Kyrgyzstan needs standardized names.
+data_master <- data_master %>%
+  mutate(Country.Name = case_when(Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+                                   Country.Name == "Kyrgyzstan" ~ "Kyrgyzstan",
+                                   (Country.Name != "Kyrgyzstan" & Country.Name != "Kyrgyz Republic") ~ Country.Name))
+```
+We're missing 2023 observations to act as both independent variables and comparisons for the estimator. Let's merge them into the data from IMF estimates. 
+```{r ukraine-fill-in-2023}
+#We're missing 2023 observations for Ukraine. Let's put in selected IMF projections for 2023 (and 2024, since we have them, and we maybe can do comparisons here too).
+
+#Check how similar the numbers are to WB numbers: 
+data_master %>%
+  filter(grepl('GDP', Indicator.Name)) %>%
+  filter(Country.Name == "Ukraine",
+         year >= 2020)
+#Slight difference between IMF numbers and World Bank numbers for Ukraine. let's change the 2021 and 2022 numbers to mirror the IMF numbers because measurement differences were likely introduced at this point, and we should keep consistency for these later years. 
+
+#drop the 8 observations from 2021, 2022 and the four variables specified.
+data_master <- data_master %>%
+  subset(!(Country.Name == "Ukraine" & year >= 2021 & (Indicator.Name == "Foreign direct investment, net inflows (% of GDP)" | Indicator.Name == "GDP growth (annual %)" | Indicator.Name == "Inflation, GDP deflator (annual %)" | Indicator.Name == "Tax revenue (% of GDP)")))
+
+#replace them with new data: 
+new_rows <- data.frame(
+  Country.Name = c("Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine", "Ukraine"),
+  year = c(2021, 2022, 2023, 2024, 2021, 2022, 2023, 2024, 2021, 2022, 2023, 2024, 2021, 2022, 2023, 2024),
+  Indicator.Name = c("Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net inflows (% of GDP)", "GDP growth (annual %)", "GDP growth (annual %)", "GDP growth (annual %)", "GDP growth (annual %)", "Tax revenue (% of GDP)", "Tax revenue (% of GDP)", "Tax revenue (% of GDP)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "Inflation, GDP deflator (annual %)", "Inflation, GDP deflator (annual %)", "Inflation, GDP deflator (annual %)"),
+  value = c(3.8, 0.1, 1.9, 1.4, -4.8, 23.9, 18.8, 15.9, 33.5, 34.3, 33.3, 33.9, 34.3, 18.6, 14.7, 8.9)
+)
+
+# Use rbind to add the new row to the dataset
+data_master <- rbind(data_master, new_rows)
+
+#let's add to Ukraine's data by pretending that the airport opened on Jan 1 2023, inputting a "1" in "passengers_spike_true" and "flights_spike_true" columns. This way we can generate an estimate of how much FDI would have increased had the airport been opened.
+new_rows <- data.frame(
+  Country.Name = c("Ukraine", "Ukraine"),
+  year = c(2023, 2023),
+  Indicator.Name = c("passengers_spike_true", "flights_spike_true"),
+  value = c(1, 1)
+)
+data_master <- rbind(data_master, new_rows)
+```
+
+Remove duplicate observations, which are caused by error in data merging (will fix if time)
+```{r duplicates}
+# Identify duplicates
+duplicate_rows <- data_master %>%
+  filter(Indicator.Name %in% c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "Foreign direct investment, net inflows (% of GDP)", "GDP, PPP (constant 2017 international $)"),
+         year >= 2000) %>%
+  group_by(Country.Name, year, Indicator.Name) %>%
+  summarise(n = n()) %>%
+  filter(n > 1)
+
+# View duplicate rows (if any)
+print(duplicate_rows)
+
+#Let's just drop the duplicates, plus the errors with Tristan da Cunha and other comma'd territories that got split incorrectly. I will fix these more directly if I have time, but omitting them from the regression will not change anything, it's just reducing the sample size, which should have a minimal effect on inference.
+data_master <- data_master %>%
+  filter(!(Country.Name == "Congo, Dem. Rep." & (Indicator.Name == "AirportsCount" | Indicator.Name == "AirportsVolume") & year == 2023))
+```
+
+Stage SCM data.
+```{r specifications}
+scm_data <- data_master %>%
+  filter(Indicator.Name %in% c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "Foreign direct investment, net inflows (% of GDP)", "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct"),
+         year >= 2000, year <= 2023) %>%
+  pivot_wider(names_from = Indicator.Name, values_from = value) %>%
+  group_by(Country.Name, year) %>%
+  summarise_all(~ if (any(!is.na(.))) .[!is.na(.)][1] else NA)
+
+scm_data <- scm_data %>% 
+  mutate(Intervention = if_else(Country.Name == "Ukraine" & (year == 2023 | year == 2022), 1, 0)) 
+
+
+
+#Note: you can add variables in the filter above and export the resulting dataset in order to add more columns. for instance, add: , "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct"
+```
+
+We have a problem with NA values. Let's fill in all ACLED and flight-count cases with NA with 0, since if they weren't included, there were no events, counts, fatalities, and so on. Then let's use "Last observation carried forward" to impute the 2023 values for all countries with NAs for 2023, since we can assume for many countries this will be a good estimate of the 2023 value.
+```{r na}
+library(zoo)
+
+#1: ACLED and flight data -> 0 
+
+# Define the variables to impute NAs with 0
+variables_to_impute <- c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", 
+                         "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", 
+                         "count_events_y, Violence against civilians", "count_events_y, Strategic developments", 
+                         "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", 
+                         "count_events_y, All types of violent conflict",
+                         "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", 
+                         "total_freight_in", "total_freight_out", "flights_spike_true", "passengers_spike_true")
+
+# Impute NAs with 0 for the specified variables
+scm_data_imputed <- scm_data %>%
+  mutate_at(vars(all_of(variables_to_impute)), ~ifelse(is.na(.), 0, .))
+
+# Filter the dataset to find NAs in the specified variables
+scm_data_imputed %>%
+  filter(if_any(all_of(variables_to_impute), is.na))
+#Success!
+
+
+#1.5: Airports Volume and Airports Count
+#These are according to 2018 numbers, but we can spread this throughout the time series so that this variable can be taken into account in the regression.
+
+
+# Filter for the observation in 2018 for AirportsCount and AirportsVolume
+observation_2023 <- scm_data_imputed %>%
+  filter(year == 2023) %>%
+  select(Country.Name, AirportsCount_2023 = AirportsCount, AirportsVolume_2023 = AirportsVolume)
+
+# Join the observation for 2018 with the original dataset
+scm_data_imputed <- scm_data_imputed %>%
+  left_join(observation_2023, by = "Country.Name") %>%
+  mutate(
+    AirportsCount = ifelse(is.na(AirportsCount), AirportsCount_2023, AirportsCount),
+    AirportsVolume = ifelse(is.na(AirportsVolume), AirportsVolume_2023, AirportsVolume)
+  ) %>%
+  select(-AirportsCount_2023, -AirportsVolume_2023)
+
+
+
+
+#2: 2023 observations -> LOCF
+
+# Define a vector with all variables
+variables <- c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", 
+                "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", 
+                "count_events_y, Violence against civilians", "count_events_y, Strategic developments", 
+                "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", 
+                "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", 
+                "GDP growth (annual %)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", 
+                "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", 
+                "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", 
+                "Foreign direct investment, net inflows (% of GDP)")
+
+# Impute missing values using LOCF for 2023 after filling forward
+scm_data_imputed <- scm_data_imputed %>%
+  group_by(Country.Name) %>%
+  mutate(across(all_of(variables), ~zoo::na.locf(., na.rm = FALSE))) %>%
+  group_by(Country.Name) %>%
+  mutate(across(all_of(variables), ~ifelse(is.na(.), zoo::na.locf(., na.rm = FALSE), .)))
+```
+
+
+
+```{r}
+
+
+#3: there are countries with NAs in the Tax Revenue variable before 2003 and sometimes before 2007. Let's just shorten the timeframe of the data to 2008-2023 to avoid the case of NAs there.
+scm_data_imputed <- scm_data_imputed %>%
+  filter(year >= 2008 & year <= 2023)
+  
+#some columns still have NAs. It seems like they are small countries or incorrectly named countries. Let's just drop them for simplicity.
+scm_data_imputed <- na.omit(scm_data_imputed)
+```
+
+
+We are missing entire observations for 10 countries in certain years, if we shorten the time frame to 2012-2023. We're missing only four countries, if we shorten the window to 2014-2023. It might be worth it to shorten the window to 2024-2023, so let's drop those four countries.
+Another option would be to not use the Tax Revenue variable so that we can afford to have a lot more countries, but it's a fantastic proxy for rule of law / how much the state is involved in the economy, which is highly relevant to FDI. So let's include it.
+```{r na-obs}
+library(tidyr)
+
+# Create a reference data frame with all combinations of countries and years
+reference_df <- expand.grid(Country.Name = unique(scm_data_imputed$Country.Name),
+                            year = 2010:2019)
+
+# Merge with original data using left join
+merged_df <- merge(reference_df, scm_data_imputed, by = c("Country.Name", "year"), all.x = TRUE)
+
+# Identify rows with missing entries
+missing_entries <- !complete.cases(merged_df)
+
+# Subset data to include only rows with missing entries
+missing_data <- merged_df[missing_entries, ]
+
+missing_data %>%
+  group_by(Country.Name) %>%
+  summarize(n = n())
+
+scm_data_imputed <- scm_data_imputed %>%
+  filter(Country.Name != "Guinea-Bissau", Country.Name != "Senegal",
+         Country.Name != "Somalia", Country.Name != "Uganda",
+         Country.Name != "Cameroon", Country.Name != "Ecuador",
+         Country.Name != "Gabon", Country.Name != "Iraq",
+         Country.Name != "Kenya", Country.Name != "Kiribati",
+         Country.Name != "Kyrgyzstan", Country.Name != "Panama",
+         Country.Name != "Rwanda", Country.Name != "Solomon Islands",
+         Country.Name != "Spain", Country.Name != "United Arab Emirates",
+         Country.Name != "Uzbekistan")
+
+scm_data_imputed <- scm_data_imputed %>% 
+  filter(year >= 2010)
+
+#Check to make sure we're good:
+# Create a reference data frame with all combinations of countries and years
+reference_df <- expand.grid(Country.Name = unique(scm_data_imputed$Country.Name),
+                            year = 2010:2023)
+
+# Merge with original data using left join
+merged_df <- merge(reference_df, scm_data_imputed, by = c("Country.Name", "year"), all.x = TRUE)
+
+# Identify rows with missing entries
+missing_entries <- !complete.cases(merged_df)
+
+# Subset data to include only rows with missing entries
+missing_data <- merged_df[missing_entries, ]
+
+missing_data %>%
+  group_by(Country.Name) %>%
+  summarize(n = n())
+```
+
+It will return an error if there are spaces in the columns. Let's fix that.
+```{r col-fill}
+colnames(scm_data_imputed) <- gsub(" ", "_", colnames(scm_data_imputed))
+colnames(scm_data_imputed) <- gsub("%", "pct", colnames(scm_data_imputed))
+colnames(scm_data_imputed) <- gsub("\\(|\\)", "", colnames(scm_data_imputed))
+colnames(scm_data_imputed) <- gsub(",", "", colnames(scm_data_imputed))
+```
+
+```{r export-data}
+colnames(scm_data_imputed) <- gsub("_", ".", colnames(scm_data_imputed))
+write.csv(scm_data_imputed, "data/scm_data.csv")
+```
+
+
+The plan for our synthetic control regression is that we will have the following specifications:
+
+Inputs to synthesize the control will align with the data available for Ukraine in 2023:
+c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true")
+
+Key output measure will be FDI as a percent of GDP: "Foreign direct investment, net inflows (% of GDP)", though we will look at all the measures, since they will each be compared with the hypothetical in which the airport opened.
+
+Time range will be 2010-2023.
+Treatment will be specified as one datapoint: Ukraine 2023. 
+
+Trying with ln():
+```{r}
+# Identify numeric variables with positive values (excluding "year")
+vars_to_transform <- scm_data_imputed %>%
+  select(-year) %>%
+  summarise(across(where(is.numeric), ~any(. > 0))) %>%
+  unlist() %>%
+  {names(.)[.]}  # Select names of variables with positive values
+
+# Transform variables using natural logarithm
+scm_data_transformed <- scm_data_imputed %>%
+  mutate(across(all_of(vars_to_transform), ~ ifelse(. > 0, log(.), .)))
+
+# Print summary of variables where transformation occurred
+cat("Summary of variables where transformation occurred:\n")
+print(summary(scm_data_transformed))
+```
+
+```{r synthetic-control}
+# Because we're not matching exactly, we will use match.out.min/match.out.covar rather than match.out/match.covar
+match.out.min <- c("Foreign_direct_investment_net_inflows_pct_of_GDP", "GDP_growth_annual_pct", "Inflation_GDP_deflator_annual_pct", "Tax_revenue_pct_of_GDP", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "total_passengers_in", "total_passengers_out", "count_events_y_All_types_of_violent_conflict", "count_events_y_Battles", "count_events_y_Explosions/Remote_violence", "count_events_y_Protests", "count_events_y_Strategic_developments", "count_events_y_Violence_against_civilians", "fatalities_y_Battles")
+
+match.covar.min <- c("AirportsCount", "AirportsVolume")
+
+result.var <- c("Foreign_direct_investment_net_inflows_pct_of_GDP", "GDP_growth_annual_pct", "Inflation_GDP_deflator_annual_pct", "Tax_revenue_pct_of_GDP")
+
+
+sea1 <- microsynth(scm_data_imputed, idvar="Country.Name", timevar="year", intvar="Intervention",
+             start.pre=2010, end.pre=2022, end.post=2023,
+             match.out.min = match.out.min,
+             match.covar = match.covar.min,
+             result.var = result.var, omnibus.var = TRUE,
+             test="lower", use.survey = FALSE, cal.epsilon =  4,
+             perm=142, jack = 0, use.backup = TRUE,
+             n.cores = min(parallel::detectCores(), 1))
+summary(sea1)
+
+plot_microsynth(sea1)
+```
+
+
+
+
+
+
+
+
+
+
+What a failure. Let's do a principal components model instead
+```{r}
+# Load required library
+library(stats)
+
+# Subset the data to include only the numeric variables
+numeric_data <- scm_data_imputed[, sapply(scm_data_imputed, is.numeric)]
+
+# Scale the numeric data
+scaled_data <- scale(numeric_data)
+
+# Perform PCA
+pca_result <- prcomp(scaled_data, scale. = TRUE)
+
+# Summary of PCA
+summary(pca_result)
+
+# Proportion of variance explained by each principal component
+prop_var <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+prop_var
+
+# Scree plot
+plot(prop_var, type = "b", main = "Scree Plot", xlab = "Principal Component", ylab = "Proportion of Variance Explained")
+
+# Biplot (if you want to visualize loadings)
+biplot(pca_result)
+
+pca_result$rotation
+
+# Assuming pca_result$rotation contains the loadings matrix
+loadings_abs <- abs(pca_result$rotation)
+
+# Summarize the absolute loadings for each principal component
+loadings_summary <- apply(loadings_abs, 2, sum)
+
+# Create a data frame to store the variable names and their summarized loadings
+loadings_df <- data.frame(Variable = rownames(loadings_abs), Loadings = loadings_summary)
+
+# Rank the variables based on their summarized loadings
+ranked_variables <- loadings_df[order(-loadings_df$Loadings), ]
+
+# Print or view the ranked variables
+print(ranked_variables)
+
+```
+
+
+```{r}
+# Load required libraries
+library(dplyr)  # For data manipulation
+library(tidyr)  # For data reshaping
+library(caret)  # For PCA
+library(factoextra)  # For visualization of PCA results
+
+# Assuming 'scm_data_imputed' is your data frame containing the variables
+# Let's first prepare the data by selecting predictor variables (Xs) and the response variable (Y)
+
+# Selecting predictor variables (Xs)
+predictors <- scm_data_imputed %>%
+  select(-c("Country.Name", "year", "Intervention", "GDP_growth_annual_pct"))
+
+# Selecting response variable (Y)
+response <- scm_data_imputed$GDP_growth_annual_pct
+
+# Check for non-numeric columns
+non_numeric_cols <- colnames(predictors)[!sapply(predictors, is.numeric)]
+print(non_numeric_cols)
+
+# Examine unique values in non-numeric columns
+lapply(predictors[non_numeric_cols], unique)
+
+# Filter numeric columns
+numeric_predictors <- predictors %>%
+  select_if(is.numeric)
+
+# Perform PCA
+set.seed(123)  # For reproducibility
+pca_result <- numeric_predictors %>%
+  prcomp(center = TRUE, scale = TRUE)
+
+# Visualize the scree plot to decide on the number of principal components to retain
+fviz_eig(pca_result, addlabels = TRUE, ylim = c(0, 50))
+
+# Based on the scree plot, decide the number of components to retain
+# Let's say we decide to retain the first 5 principal components
+
+# Retain the first 5 principal components
+num_components <- 5
+selected_components <- predict(pca_result, newdata = predictors)[, 1:num_components]
+
+# Add response variable (Y) to the selected components
+selected_components <- cbind(selected_components, response)
+
+# Cluster by country and year
+clustered_data <- scm_data_imputed %>%
+  select("Country.Name", "year") %>%
+  distinct() %>%
+  mutate(cluster_id = factor(paste("Cluster", row_number()), levels = paste("Cluster", 1:n())))
+
+# Merge clustered data with selected components
+final_data <- cbind(clustered_data, selected_components)
+
+# Now 'final_data' contains the clustered data with selected principal components and the response variable
+# You can use this data for further analysis or visualization
+```
+
+
+```{r}
+predictors <- scm_data_imputed %>%
+  select(-c("Country.Name", "year", "Intervention"))
+
+# Perform OLS regression
+ols_model <- lm(`GDP_growth_annual_pct` ~ . - Country.Name - year, data = predictors)
+
+# Summary of the model
+summary(ols_model)
+```
+
+
