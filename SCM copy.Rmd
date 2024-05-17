@@ -27,6 +27,50 @@ setwd('/Users/michelleschultze/ukr2024')
 data_master <- read_csv("data/master_dataset copy.csv")
 ```
 
+Add a "spike in flights" variable to standardize airport/flight reopenings
+```{r var-crunching}
+set.seed(1)
+
+#scouting out variables to include.
+data_master %>%
+  filter(grepl('GDP', Indicator.Name)) %>%
+  group_by(Indicator.Name) %>%
+  summarize(n = n()) %>%
+  print(n = 34)
+data_master %>%
+  filter(grepl('Foreign', Indicator.Name)) %>%
+  group_by(Indicator.Name) %>%
+  summarize(n = n())
+
+#Selected variables that we may feed into the model: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "PPP conversion factor, GDP (LCU per international $)", "Services, value added (% of GDP)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
+
+#Most economic important variables to start with: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
+
+#Generate a "big spike in flights into the country" variable, which we'll call "flights_spike_true". Let's say, if flights spike at least 2x from the previous month. We'll generate the same for passengers.
+data_master <- data_master %>%
+  filter(Indicator.Name == "passengers_in_change_pct" | Indicator.Name == "flights_in_change_pct") %>%
+  mutate(passengers_spike_true = case_when((Indicator.Name == "passengers_in_change_pct") & (value >= 5) ~ 1,
+                                        (Indicator.Name == "passengers_in_change_pct") & (value <= 5) ~ 0),
+         flights_spike_true = case_when((Indicator.Name == "flights_in_change_pct") & (value >= 5) ~ 1,
+                                        (Indicator.Name == "flights_in_change_pct") & (value <= 5) ~ 0)) %>%
+  select(Country.Name, year, passengers_spike_true, flights_spike_true) %>%
+  pivot_longer(cols = 3:4, names_to = "Indicator.Name") %>%
+  filter(!is.na(value)) %>%
+  full_join(select(data_master, 2:5))
+
+data_master <- data_master %>%
+  select(Country.Name, year, Indicator.Name, value) 
+
+##CHECK VALIDITY OF THIS MEASURE##
+#filter and then check those labeled 1 and 1 
+x <- data_master %>%
+  filter((Indicator.Name == "passengers_spike_true" | Indicator.Name == "flights_spike_true") & value == 1)
+x
+#3231 observations where passengers/flights increased by more than a factor of 5 in the year
+#I'd say that's the sort of spike that would be correlated with an airport reopening
+```
+
+
 We missed changing some names!
 ```{r}
 #search df
@@ -93,6 +137,7 @@ data_master <- data_master %>%
     Country.Name == "Turkey" ~ "Turkiye",
     Country.Name == "Venezuela, RB" ~ "Venezuela",
     Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
     Country.Name == "Yemen, Rep." ~ "Yemen",
     TRUE ~ Country.Name)
   ) %>%
@@ -102,53 +147,6 @@ data_master <- data_master %>%
 ```
 
 
-Add a "spike in flights" variable to standardize airport/flight reopenings
-```{r var-crunching}
-set.seed(1)
-
-#scouting out variables to include.
-data_master %>%
-  filter(grepl('GDP', Indicator.Name)) %>%
-  group_by(Indicator.Name) %>%
-  summarize(n = n()) %>%
-  print(n = 34)
-data_master %>%
-  filter(grepl('Foreign', Indicator.Name)) %>%
-  group_by(Indicator.Name) %>%
-  summarize(n = n())
-
-#Selected variables that we may feed into the model: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "PPP conversion factor, GDP (LCU per international $)", "Services, value added (% of GDP)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
-
-#Most economic important variables to start with: c("GDP per capita, PPP (constant 2017 international $)", "GDP, PPP (constant 2017 international $)", "Inflation, GDP deflator (annual %)", "Foreign direct investment, net inflows (% of GDP)", "Foreign direct investment, net outflows (% of GDP)")
-
-#Generate a "big spike in flights into the country" variable, which we'll call "flights_spike_true". Let's say, if flights spike at least 2x from the previous month. We'll generate the same for passengers.
-data_master <- data_master %>%
-  filter(Indicator.Name == "passengers_in_change_pct" | Indicator.Name == "flights_in_change_pct") %>%
-  mutate(passengers_spike_true = case_when((Indicator.Name == "passengers_in_change_pct") & (value >= 5) ~ 1,
-                                        (Indicator.Name == "passengers_in_change_pct") & (value <= 5) ~ 0),
-         flights_spike_true = case_when((Indicator.Name == "flights_in_change_pct") & (value >= 5) ~ 1,
-                                        (Indicator.Name == "flights_in_change_pct") & (value <= 5) ~ 0)) %>%
-  select(Country.Name, year, passengers_spike_true, flights_spike_true) %>%
-  pivot_longer(cols = 3:4, names_to = "Indicator.Name") %>%
-  filter(!is.na(value)) %>%
-  full_join(select(data_master, 2:5))
-
-data_master <- data_master %>%
-  select(Country.Name, year, Indicator.Name, value) 
-
-##CHECK VALIDITY OF THIS MEASURE##
-#filter and then check those labeled 1 and 1 
-data_master %>%
-  filter((Indicator.Name == "passengers_spike_true" | Indicator.Name == "flights_spike_true") & value == 1)
-#3222 observations where passengers/flights increased by more than a factor of 5 in the year
-#I'd say that's the sort of spike that would be correlated with an airport reopening
-
-#Also I noticed later that Kyrgyzstan needs standardized names.
-data_master <- data_master %>%
-  mutate(Country.Name = case_when(Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
-                                   Country.Name == "Kyrgyzstan" ~ "Kyrgyzstan",
-                                   (Country.Name != "Kyrgyzstan" & Country.Name != "Kyrgyz Republic") ~ Country.Name))
-```
 We're missing 2023 observations to act as both independent variables and comparisons for the estimator. Let's merge them into the data from IMF estimates. 
 ```{r ukraine-fill-in-2023}
 #We're missing 2023 observations for Ukraine. Let's put in selected IMF projections for 2023 (and 2024, since we have them, and we maybe can do comparisons here too).
