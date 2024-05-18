@@ -111,7 +111,6 @@ data_master <- data_master %>%
     Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
     Country.Name == "Brunei" ~ "Brunei Darussalam",
     Country.Name == "West Bank and Gaza" ~ "Palestine",
-    Country.Name == "Russia" ~ "Russian Federation",
     Country.Name == "Saint Martin" ~ "St. Martin (French part)",
     Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
     Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
@@ -290,9 +289,9 @@ scm_data_imputed <- scm_data_imputed %>%
 ```{r}
 
 
-#3: there are countries with NAs in the Tax Revenue variable before 2003 and sometimes before 2007. Let's just shorten the timeframe of the data to 2008-2023 to avoid the case of NAs there.
+#3: there are countries with NAs in the Tax Revenue variable before 2003 and sometimes before 2007. Let's just shorten the timeframe of the data to 2008-2023 to avoid the case of NAs there. Let's shorten it further to ≤2019 to avoid COVID effects, and ≥2010 because later on we'll determine that this is the way we maximize the total number of countries with complete time series for the entire period.
 scm_data_imputed <- scm_data_imputed %>%
-  filter(year >= 2008 & year <= 2023)
+  filter(year >= 2010 & year <= 2019)
   
 #some columns still have NAs. It seems like they are small countries or incorrectly named countries. Let's just drop them for simplicity.
 scm_data_imputed <- na.omit(scm_data_imputed)
@@ -327,7 +326,7 @@ scm_data_imputed <- scm_data_imputed %>%
          Country.Name != "Cameroon", Country.Name != "Ecuador",
          Country.Name != "Gabon", Country.Name != "Iraq",
          Country.Name != "Kenya", Country.Name != "Kiribati",
-         Country.Name != "Kyrgyzstan", Country.Name != "Panama",
+         Country.Name != "Panama",
          Country.Name != "Rwanda", Country.Name != "Solomon Islands",
          Country.Name != "Spain", Country.Name != "United Arab Emirates",
          Country.Name != "Uzbekistan")
@@ -364,8 +363,13 @@ colnames(scm_data_imputed) <- gsub(",", "", colnames(scm_data_imputed))
 
 ```{r export-data}
 colnames(scm_data_imputed) <- gsub("_", ".", colnames(scm_data_imputed))
-write.csv(scm_data_imputed, "data/scm_data.csv")
+write.csv(scm_data_imputed, "data/NEWDATA_May172024.csv")
 ```
+
+
+STOP RUNNING HERE
+Below are old attempts that did not end up working.
+
 
 
 The plan for our synthetic control regression is that we will have the following specifications:

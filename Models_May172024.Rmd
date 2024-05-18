@@ -1,0 +1,38 @@
+---
+title: 'Running Models'
+author: "Michelle Schultze"
+date: "2024-05-17"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+#install.packages("readr", repos = "http://cran.us.r-project.org")
+#install.packages("microsynth", repos = "http://cran.us.r-project.org")
+#install.packages("LowRankQP", repos = "http://cran.us.r-project.org")
+library("readr")
+library("microsynth")
+library("LowRankQP")
+
+setwd('/Users/michelleschultze/ukr2024')
+data <- read_csv("data/NEWDATA_May172024.csv")
+```
+
+First, we have to create a list of countries which had large airports that reopened during the time period. 
+
+Start by sorting the dataframe to see if there are any countries that may fit this criteria.
+```{r}
+test <- data %>% 
+  arrange(-flights.in.change.pct) %>%
+  select(Country.Name, year, passengers.in.change.pct, flights.in.change.pct)
+view(test)
+```
+
