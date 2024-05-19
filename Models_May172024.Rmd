@@ -26,13 +26,208 @@ setwd('/Users/michelleschultze/ukr2024')
 data <- read_csv("data/NEWDATA_May172024.csv")
 ```
 
-First, we have to create a list of countries which had large airports that reopened during the time period. 
+[Descriptive stats will go here]
 
-Start by sorting the dataframe to see if there are any countries that may fit this criteria.
-```{r}
-test <- data %>% 
-  arrange(-flights.in.change.pct) %>%
-  select(Country.Name, year, passengers.in.change.pct, flights.in.change.pct)
-view(test)
+We have some outliers with Hungary (2018) and Azerbaijan (2014) with high spikes in passengers flying into the country. This seems to be measurement error. Let's cut them from the dataset.
+```{r filter message=FALSE, warning=FALSE}
+data <- data %>% 
+  filter(Country.Name != "Azerbaijan",
+         Country.Name != "Hungary")
 ```
 
+
+Models we would like to run:
+
+No FE: 
+(1a) log(total FDI) = lag(percentage change in passengers flying in)
+(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
+(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+
+W/ Country FE:
+(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
+(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+
+Add in PPP GDP & per capita measures from WB
+```{r ppp, message=FALSE, warning=FALSE}
+#deleted header rows with metadata to allow for import
+ppp_pc <- read_csv("data/gdp_ppp_per capita.csv")
+ppp <- read_csv("data/gdp_ppp.csv")
+
+#let's pivot and merge these together
+ppp <- ppp %>%
+  pivot_longer(cols = where(is.numeric), names_to = "year") %>%
+  filter(!is.na(value)) %>%
+  select(1,3, year, value)
+
+ppp_pc <- ppp_pc %>%
+  pivot_longer(cols = where(is.numeric), names_to = "year") %>%
+  filter(!is.na(value)) %>%
+  select(1,3, year, value)
+
+ppp <- ppp %>% 
+  full_join(ppp_pc)
+
+colnames(ppp) <- c("Country.Name", "Indicator.Name", "year", "value")
+
+ppp <- ppp %>%
+  pivot_wider(names_from = Indicator.Name, values_from = value) %>%
+  group_by(Country.Name, year) %>%
+  summarise_all(~ if (any(!is.na(.))) .[!is.na(.)][1] else NA) %>%
+  mutate(year = as.numeric(year))
+
+#standardize names:
+ppp <- ppp %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha", "U.S.S.R.", "West Germany"))) 
+  #no need to delete aggregated entities (ie. "West Africa") — they'll drop when we merge with the main dataframe!
+
+data <- data %>%
+  left_join(ppp, by = c("Country.Name", "year"))
+```
+
+Create some logged variables:
+```{r vars, message=FALSE, warning=FALSE}
+data <- data %>% 
+  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$`,
+         total_FDI_r = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (current international $)`,
+    log_FDI_n = log1p(total_FDI_n),
+    log_FDI_r = log1p(total_FDI_r),
+    log_GDP_n = log1p(`GDP.current.US$`),
+    log_GDP_r = log1p(`GDP, PPP (current international $)`),
+    log_GDP_r_pc = log1p(`GDP per capita, PPP (current international $)`),
+    log_battle = log1p(fatalities.y.Battles))
+```
+
+Guide to new variables:
+total_FDI_n = nominal total FDI (from nominal GDP numbers in current $US)
+total_FDI_r = real total FDI (from PPP GDP numbers in current $US)
+log_FDI_n = nominal total FDI, logged+1
+log_FDI_r = real total FDI, logged+1
+log_GDP_n = nominal GDP, logged+1
+log_GDP_r = real GDP, logged+1
+log_GDP_r_pc = real GDP per capita, logged+1
+log_battle = battle fatalities, logged+1
+
+MODELS WITHOUT FIXED EFFECTS
+
+(1a) log(total FDI) = lag(percentage change in passengers flying in)
+```{r model.1a, message=TRUE, warning=TRUE}
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data)
+summary(model.1a)
+```
+Model 1a is the most basic model, yet we see the coefficient of interest is not significant.
+
+(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+```{r model.2a, message=TRUE, warning=TRUE}
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
+summary(model.2a)
+```
+Model 2a adds battle deaths as a covariate. Passengers is still not significant.
+
+(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
+```{r model.3a, message=TRUE, warning=TRUE}
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data)
+summary(model.3a)
+```
+Model 3a adds nominal GDP as a covariate. Passengers is still not significant.
+
+(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
+```{r model.4a, message=TRUE, warning=TRUE}
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
+summary(model.4a)
+```
+Instead of nominal GDP, Model 4a adds real GDP as a covariate. The passengers variable is significant at the 10% level. This is likely because controlling for the real value of the local currency the year before helps to explain much of the variation in FDI the following year.
+
+Model 4a demonstrates that, other factors held constant, a 1% increase in passengers from one year is associated with a 0.0011399% increase (+0.114%) in nominal FDI the following year. 
+Scaling up, this means a 100% increase in passengers is associated with a 11.399% increase in nominal FDI the following year!
+
+(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+```{r model.5a, message=TRUE, warning=TRUE}
+model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
+summary(model.5a)
+```
+Including per capita real GDP instead makes the passengers variable insignificant again.
+Does this effect carry over when we run it with nominal GDP AND per capita real GDP instead?
+```{r model.6a, message=TRUE, warning=TRUE}
+model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc) + lag(log_GDP_n), data = data)
+summary(model.6a)
+```
+Yes. It looks like controlling for per capita GDP soaks up much of the variation regarding total FDI maybe because it is a population-weighted variable. 
+[do more thinking about this]
+
+
+
+To be added:
+
+W/ Country FE:
+(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
+
+
+(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+
+
+(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
