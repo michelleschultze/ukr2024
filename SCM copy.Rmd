@@ -285,27 +285,26 @@ scm_data_imputed <- scm_data_imputed %>%
 ```
 
 
-
 ```{r}
 
 
 #3: there are countries with NAs in the Tax Revenue variable before 2003 and sometimes before 2007. Let's just shorten the timeframe of the data to 2008-2023 to avoid the case of NAs there. Let's shorten it further to ≤2019 to avoid COVID effects, and ≥2010 because later on we'll determine that this is the way we maximize the total number of countries with complete time series for the entire period.
 scm_data_imputed <- scm_data_imputed %>%
-  filter(year >= 2010 & year <= 2019)
+  filter(year >= 2008 & year <= 2019)
   
 #some columns still have NAs. It seems like they are small countries or incorrectly named countries. Let's just drop them for simplicity.
 scm_data_imputed <- na.omit(scm_data_imputed)
 ```
 
-
-We are missing entire observations for 10 countries in certain years, if we shorten the time frame to 2012-2023. We're missing only four countries, if we shorten the window to 2014-2023. It might be worth it to shorten the window to 2024-2023, so let's drop those four countries.
+*because we eliminated the RD design, we don't need to have a symmetric dataset. Therefore we're not running the following chunk so that we can preserve the full range of data *
+We are missing entire observations for 10 countries in certain years, if we shorten the time frame to 2012-2023. We're missing only four countries, if we shorten the window to 2014-2023. It might be worth it to shorten the window to 2014-2023, so let's drop those four countries.
 Another option would be to not use the Tax Revenue variable so that we can afford to have a lot more countries, but it's a fantastic proxy for rule of law / how much the state is involved in the economy, which is highly relevant to FDI. So let's include it.
 ```{r na-obs}
 library(tidyr)
 
 # Create a reference data frame with all combinations of countries and years
 reference_df <- expand.grid(Country.Name = unique(scm_data_imputed$Country.Name),
-                            year = 2010:2019)
+                            year = 2000:2019)
 
 # Merge with original data using left join
 merged_df <- merge(reference_df, scm_data_imputed, by = c("Country.Name", "year"), all.x = TRUE)
@@ -365,6 +364,10 @@ colnames(scm_data_imputed) <- gsub(",", "", colnames(scm_data_imputed))
 colnames(scm_data_imputed) <- gsub("_", ".", colnames(scm_data_imputed))
 write.csv(scm_data_imputed, "data/NEWDATA_May172024.csv")
 ```
+^The above was edited because we removed the "na-obs" chunk to preserve the full range of data, therefore naming the new dataset "FULLDATA_NAs_May242024.csv".
+
+
+
 
 
 STOP RUNNING HERE

@@ -21,40 +21,20 @@ library(naniar)
 library("readr")
 library("microsynth")
 library("LowRankQP")
+#install.packages("plm")
+library(plm)
 
 setwd('/Users/michelleschultze/ukr2024')
-data <- read_csv("data/NEWDATA_May172024.csv")
+data0 <- read_csv("data/NEWDATA_May172024.csv") #no NAs, range 2010-2019
+data <- read_csv("data/FULLDATA_NAs_May242024.csv") #NAs, range 2000-2019
 ```
 
-[Descriptive stats will go here]
-
-We have some outliers with Hungary (2018) and Azerbaijan (2014) with high spikes in passengers flying into the country. This seems to be measurement error. Let's cut them from the dataset.
-```{r filter message=FALSE, warning=FALSE}
-data <- data %>% 
-  filter(Country.Name != "Azerbaijan",
-         Country.Name != "Hungary")
-```
-
-
-Models we would like to run:
-
-No FE: 
-(1a) log(total FDI) = lag(percentage change in passengers flying in)
-(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
-(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
-(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
-(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
-
-W/ Country FE:
-(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
-(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
-(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
 
 Add in PPP GDP & per capita measures from WB
 ```{r ppp, message=FALSE, warning=FALSE}
-#deleted header rows with metadata to allow for import
-ppp_pc <- read_csv("data/gdp_ppp_per capita.csv")
-ppp <- read_csv("data/gdp_ppp.csv")
+#deleted header rows with metadata to allow for easy import
+ppp_pc <- read_csv("data/gdp_ppp_per capita_constantUSD.csv")
+ppp <- read_csv("data/gdp_ppp_constantUSD.csv")
 
 #let's pivot and merge these together
 ppp <- ppp %>%
@@ -149,16 +129,28 @@ data <- data %>%
   left_join(ppp, by = c("Country.Name", "year"))
 ```
 
+Since I couldn't find nominal GDP data in constant 2017 international$, we'll fix the nominal GDP variable using the GDP deflator: we want both GDP terms to be in the same terms (constant 2017 $international).
+```{r}
+# GDP deflator = nominal/real * 100
+# nominal = real * deflator/100
+
+data <- data %>%
+  mutate(total_GDP_n_ID = `GDP, PPP (constant 2017 international $)` * Inflation.GDP.deflator.annual.pct /100)
+
+#before reporting, check that this is the proper way to do this. (says "inflation" in the title of the variable which doesn't sound like what we want? But this is supposed to be the GDP deflator.. )
+```
+
+
 Create some logged variables:
 ```{r vars, message=FALSE, warning=FALSE}
 data <- data %>% 
-  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$`,
-         total_FDI_r = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (current international $)`,
+  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * total_GDP_n_ID,
+         total_FDI_r = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (constant 2017 international $)`,
     log_FDI_n = log1p(total_FDI_n),
     log_FDI_r = log1p(total_FDI_r),
-    log_GDP_n = log1p(`GDP.current.US$`),
-    log_GDP_r = log1p(`GDP, PPP (current international $)`),
-    log_GDP_r_pc = log1p(`GDP per capita, PPP (current international $)`),
+    log_GDP_n = log1p(total_GDP_n_ID),
+    log_GDP_r = log1p(`GDP, PPP (constant 2017 international $)`),
+    log_GDP_r_pc = log1p(`GDP per capita, PPP (constant 2017 international $)`),
     log_battle = log1p(fatalities.y.Battles))
 ```
 
@@ -172,35 +164,143 @@ log_GDP_r = real GDP, logged+1
 log_GDP_r_pc = real GDP per capita, logged+1
 log_battle = battle fatalities, logged+1
 
+Descriptive stats:
+```{r}
+glimpse(data)
+unique(data$Country.Name)
+data %>%
+  summarize(min = min(year),
+            max = max(year))
+```
+
+We have some outliers with Hungary (2018) and Azerbaijan (2014) with high spikes in passengers flying into the country. This seems to be measurement error. Let's cut them from the dataset.
+```{r filter message=FALSE, warning=FALSE}
+data %>%
+  ggplot(mapping = aes(x = year, y = passengers.in.change.pct)) +
+  geom_point() +
+  labs(title = "Change in passengers flying into the country", subtitle = "Outliers with Hungary (2018) and Azerbaijan (2014), likely measurement error.")
+
+data <- data %>% 
+  filter(Country.Name != "Azerbaijan",
+         Country.Name != "Hungary")
+```
+
+```{r}
+data %>%
+  ggplot(mapping = aes(x = year, y = passengers.in.change.pct)) +
+  geom_point() +
+  labs(title = "Change in passengers flying into the country (cont.)", subtitle = "After removing outliers, still some high outliers emerge.")
+```
+
+
+```{r}
+sums <- data %>%
+  group_by(Country.Name) %>%
+  summarize(min_year = min(year),
+            max_year = max(year),
+            range_years = (max(year) - min(year)),
+            min_FDI_n = min(total_FDI_n),
+            max_FDI_n = max(total_FDI_n),
+            range_FDI_n = (max(total_FDI_n) - min(total_FDI_n)),
+            min_FDI_r = min(total_FDI_r),
+            max_FDI_r = max(total_FDI_r),
+            range_FDI_r = (max(total_FDI_r) - min(total_FDI_r)),
+            min_pass = min(passengers.in.change.pct),
+            max_pass = max(passengers.in.change.pct),
+            range_pass = (max(passengers.in.change.pct) - min(passengers.in.change.pct)))
+
+sums
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(x = min_pass, y = max_pass)) +
+  geom_point() +
+  labs(title = "Min and max of the 'percent change in passengers' variable", subtitle = "It looks like countries have strong spikes and decreases reported... measurement error or real?")
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(y = range_years)) +
+    geom_bar() +
+  labs(title = "Year ranges in the full dataset", subtitle = "Most countries have the full range of data N=19")
+
+data %>%
+  ggplot(mapping = aes(x = year, y = total_FDI_r, color = "Real FDI", alpha = 0.5)) +
+  geom_point() +
+  geom_point(data = data, mapping = aes(x = year, y = total_FDI_n, color = "Nominal FDI", alpha = 0.5)) +
+  labs(title = "FDI levels over time", subtitle = "Clustered somewhere above zero.")
+
+data %>%
+  ggplot(mapping = aes(x = year, y = log1p(total_FDI_r), color = "Logged real FDI", alpha = 0.5)) +
+  geom_point() +
+  geom_point(data = data, mapping = aes(x = year, y = log1p(total_FDI_n), color = "Logged nominal FDI", alpha = 0.5)) +
+  labs(title = "Logged  FDI levels over time", subtitle = "Clustered somewhere above zero.")
+
+sums %>%
+  ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
+  geom_point() +
+  labs(title = "FDI ranges compared", subtitle = "The ratio between nominal and real FDI is not equal between all countries.")
+
+sums %>%
+  ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
+  geom_point() +
+  labs(title = "Logged FDI ranges compared", subtitle = "Nominal and real FDI differences are  smoothed out through logs.")
+```
+
+Models we would like to run:
+
+No FE: 
+(1a) log(total FDI) = lag(percentage change in passengers flying in)
+(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
+(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+
+W/ Country FE:
+(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
+(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+
 MODELS WITHOUT FIXED EFFECTS
 
 (1a) log(total FDI) = lag(percentage change in passengers flying in)
 ```{r model.1a, message=TRUE, warning=TRUE}
 model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data)
 summary(model.1a)
+bptest(model.1a) #fail to reject null that variance of error term is constant.
 ```
-Model 1a is the most basic model, yet we see the coefficient of interest is not significant.
+Model 1a is the most basic model, yet we see the coefficient of interest is significant at a 10% level.
+When we ran the model with a smaller range of countries and with only the range 2010-2019, this was not significant.
 
 (2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
 ```{r model.2a, message=TRUE, warning=TRUE}
 model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
 summary(model.2a)
+bptest(model.2a) #fail to reject null that variance of error term is constant.
 ```
-Model 2a adds battle deaths as a covariate. Passengers is still not significant.
+Model 2a adds battle deaths as a covariate. Passengers is not significant.
 
 (3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
 ```{r model.3a, message=TRUE, warning=TRUE}
 model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data)
 summary(model.3a)
+bptest(model.3a) #fail to reject null that variance of error term is constant, but it's close! some homoskedascity likely present.
 ```
-Model 3a adds nominal GDP as a covariate. Passengers is still not significant.
+Model 3a adds nominal GDP as a covariate. Passengers is not significant.
 
 (4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
 ```{r model.4a, message=TRUE, warning=TRUE}
 model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
 summary(model.4a)
+bptest(model.4a) #reject null that variance of error term is constant. homoskedascity likely present.
 ```
-Instead of nominal GDP, Model 4a adds real GDP as a covariate. The passengers variable is significant at the 10% level. This is likely because controlling for the real value of the local currency the year before helps to explain much of the variation in FDI the following year.
+Instead of nominal GDP, Model 4a adds real GDP as a covariate. With the full range of countries and years, this is not significant.
+
+
+
+
+Before we added the full range of countries and years, the passengers variable was significant at the 10% level. This is likely because controlling for the real value of the local currency the year before helps to explain much of the variation in FDI the following year.
 
 Model 4a demonstrates that, other factors held constant, a 1% increase in passengers from one year is associated with a 0.0011399% increase (+0.114%) in nominal FDI the following year. 
 Scaling up, this means a 100% increase in passengers is associated with a 11.399% increase in nominal FDI the following year!
@@ -209,15 +309,140 @@ Scaling up, this means a 100% increase in passengers is associated with a 11.399
 ```{r model.5a, message=TRUE, warning=TRUE}
 model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
 summary(model.5a)
+bptest(model.5a) #reject null that variance of error term is constant. homoskedascity likely present.
 ```
 Including per capita real GDP instead makes the passengers variable insignificant again.
 Does this effect carry over when we run it with nominal GDP AND per capita real GDP instead?
 ```{r model.6a, message=TRUE, warning=TRUE}
 model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc) + lag(log_GDP_n), data = data)
 summary(model.6a)
+bptest(model.6a) #fail to reject null that variance of error term is constant.
 ```
 Yes. It looks like controlling for per capita GDP soaks up much of the variation regarding total FDI maybe because it is a population-weighted variable. 
 [do more thinking about this]
+
+
+
+
+
+Just European countries:
+```{r}
+data_Eur <- data %>%
+  filter(Country.Name %in% c("Armenia", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria", "Croatia", "Cyprus", "Czechia", "Denmark", "Estonia", "Finland", "France", "Georgia", "Germany", "Greece", "Iceland", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Moldova", "Netherlands", "North Macedonia", "Norway", "Poland", "Portugal", "Romania", "Russia", "Serbia", "Slovenia", "Spain", "Sweden", "Switzerland",  "Turkiye", "Ukraine", "United Kingdom"))
+unique(data_Eur$Country.Name)
+```
+
+Repeat some of the analysis here:
+
+```{r}
+data_Eur %>%
+  ggplot(mapping = aes(x = year, y = passengers.in.change.pct)) +
+  geom_point() +
+  labs(title = "Change in passengers flying into the country (Eur)", subtitle = "Europe has a similar pattern to the rest of the world.")
+```
+
+
+```{r}
+sums <- data_Eur %>%
+  group_by(Country.Name) %>%
+  summarize(min_year = min(year),
+            max_year = max(year),
+            range_years = (max(year) - min(year)),
+            min_FDI_n = min(total_FDI_n),
+            max_FDI_n = max(total_FDI_n),
+            range_FDI_n = (max(total_FDI_n) - min(total_FDI_n)),
+            min_FDI_r = min(total_FDI_r),
+            max_FDI_r = max(total_FDI_r),
+            range_FDI_r = (max(total_FDI_r) - min(total_FDI_r)),
+            min_pass = min(passengers.in.change.pct),
+            max_pass = max(passengers.in.change.pct),
+            range_pass = (max(passengers.in.change.pct) - min(passengers.in.change.pct)))
+
+sums
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(x = min_pass, y = max_pass)) +
+  geom_point() +
+  labs(title = "Min and max of the 'percent change in passengers' variable", subtitle = "Similar pattern to the rest of the world.")
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(y = range_years)) +
+    geom_bar() +
+  labs(title = "Year ranges in the full dataset", subtitle = "Even more countries have the full range of data N=19")
+
+data_Eur %>%
+  ggplot(mapping = aes(x = year, y = total_FDI_r, color = "Real FDI", alpha = 0.5)) +
+  geom_point() +
+  geom_point(data = data, mapping = aes(x = year, y = total_FDI_n, color = "Nominal FDI", alpha = 0.5)) +
+  labs(title = "FDI levels over time (Eur)", subtitle = "Clustered somewhere above zero.")
+
+sums %>%
+  ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
+  geom_point() +
+  labs(title = "FDI ranges compared (Eur)", subtitle = "The ratio between nominal and real FDI is more similar.")
+
+sums %>%
+  ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
+  geom_point() +
+  labs(title = "Logged FDI ranges compared (Eur)", subtitle = "Nominal and real FDI differences are smoothed out through logs.")
+```
+
+
+MODELS
+
+
+(1a) log(total FDI) = lag(percentage change in passengers flying in)
+```{r model.1a, message=TRUE, warning=TRUE}
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data_Eur)
+summary(model.1a)
+bptest(model.1a) #fail to reject null that variance of error term is constant.
+```
+Model 1a is the most basic model. The coefficient is NOT significant (unlike the world set).
+
+(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+```{r model.2a, message=TRUE, warning=TRUE}
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
+summary(model.2a)
+bptest(model.2a) #fail to reject null that variance of error term is constant.
+```
+Model 2a adds battle deaths as a covariate. Passengers becomes significant.
+
+(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
+```{r model.3a, message=TRUE, warning=TRUE}
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data_Eur)
+summary(model.3a)
+bptest(model.3a) #reject null that variance of error term is constant. homoskedascity likely present.
+```
+Model 3a adds nominal GDP as a covariate. Passengers loses its significance.
+
+(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
+```{r model.4a, message=TRUE, warning=TRUE}
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
+summary(model.4a)
+bptest(model.4a) #fail to reject null that variance of error term is constant.
+```
+Instead of nominal GDP, Model 4a adds real GDP as a covariate. Limited to europe, the passengers variable IS significant.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
