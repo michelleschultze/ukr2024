@@ -30,33 +30,47 @@ data <- read_csv("data/FULLDATA_NAs_May242024.csv") #NAs, range 2000-2019
 ```
 
 
-Add in PPP GDP & per capita measures from WB
+Add in PPP GDP & per capita measures from WB, plus the correct deflator.
 ```{r ppp, message=FALSE, warning=FALSE}
 #deleted header rows with metadata to allow for easy import
 ppp_pc <- read_csv("data/gdp_ppp_per capita_constantUSD.csv")
 ppp <- read_csv("data/gdp_ppp_constantUSD.csv")
+gdp_deflator <- read_csv("data/gdp_deflator.csv")
 
 #let's pivot and merge these together
 ppp <- ppp %>%
   pivot_longer(cols = where(is.numeric), names_to = "year") %>%
+  mutate(value = as.numeric(value)) %>%
   filter(!is.na(value)) %>%
-  select(1,3, year, value)
+  select(1,3, year, value) %>%
+  mutate(year = as.numeric(year))
 
 ppp_pc <- ppp_pc %>%
   pivot_longer(cols = where(is.numeric), names_to = "year") %>%
+  mutate(value = as.numeric(value)) %>%
   filter(!is.na(value)) %>%
-  select(1,3, year, value)
+  select(1,3, year, value) %>%
+  mutate(year = as.numeric(year))
+
+gdp_deflator <- gdp_deflator %>%
+  pivot_longer(cols = 5:28, names_to = "year") %>%
+  mutate(value = as.numeric(value)) %>%
+  filter(!is.na(value)) %>%
+  mutate(year = as.numeric(year),
+         `Indicator Name` = `Series Name`) %>%
+  select(3, year, value, 7) 
 
 ppp <- ppp %>% 
-  full_join(ppp_pc)
+  full_join(ppp_pc) %>%
+  full_join(gdp_deflator) %>%
+  group_by(`Country Name`, year, `Indicator Name`) %>%
+  summarise_all(~ if (any(!is.na(.))) .[!is.na(.)][1] else NA)
 
-colnames(ppp) <- c("Country.Name", "Indicator.Name", "year", "value")
+
+colnames(ppp) <- c("Country.Name", "year", "Indicator.Name", "value")
 
 ppp <- ppp %>%
-  pivot_wider(names_from = Indicator.Name, values_from = value) %>%
-  group_by(Country.Name, year) %>%
-  summarise_all(~ if (any(!is.na(.))) .[!is.na(.)][1] else NA) %>%
-  mutate(year = as.numeric(year))
+  pivot_wider(names_from = Indicator.Name, values_from = value) 
 
 #standardize names:
 ppp <- ppp %>%
@@ -135,24 +149,43 @@ Since I couldn't find nominal GDP data in constant 2017 international$, we'll fi
 # nominal = real * deflator/100
 
 data <- data %>%
-  mutate(total_GDP_n_ID = `GDP, PPP (constant 2017 international $)` * Inflation.GDP.deflator.annual.pct /100)
+  mutate(total_GDP_n_ID = (`GDP, PPP (constant 2017 international $)` * `GDP deflator (base year varies by country)` /100))
 
 #before reporting, check that this is the proper way to do this. (says "inflation" in the title of the variable which doesn't sound like what we want? But this is supposed to be the GDP deflator.. )
+# chatgpt confirms √: mutate(Nominal_GDP = GDP_PPP * (GDP_deflator / 100))
 ```
 
+**Addressing that the nominal GDP measures are different**
+
+After running subsequent models with different nominal GDP measurements, they generate different results. Let's study the difference between the international$ and USD versions of nominal GDP. This chart represents the massive differences between the nominal FDI numbers that we can use in the models.
+```{r}
+data %>%
+  ggplot(mapping = aes(x = total_GDP_n_ID, y = `GDP.current.US$`)) +
+  geom_point() +
+  labs(title = "Comparing nominal GDP measures", subtitle = "Both generated using World Bank data", x = "Nominal GDP in terms of constant 2017 international$, converted using deflator", y = "Nominal GDP in terms of current US$, imported directly")
+
+data %>%
+  ggplot(mapping = aes(x = log(total_GDP_n_ID), y = log(`GDP.current.US$`))) +
+  geom_point() +
+  labs(title = "Comparing LOGGED nominal GDP measures", subtitle = "Both generated using World Bank data", x = "Nominal GDP in terms of constant 2017 international$, converted using deflator", y = "Nominal GDP in terms of current US$, imported directly")
+```
+
+These align fairly well. The measures seem to correlate. 
 
 Create some logged variables:
 ```{r vars, message=FALSE, warning=FALSE}
 data <- data %>% 
-  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * total_GDP_n_ID,
+  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$`,
          total_FDI_r = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (constant 2017 international $)`,
     log_FDI_n = log1p(total_FDI_n),
     log_FDI_r = log1p(total_FDI_r),
-    log_GDP_n = log1p(total_GDP_n_ID),
+    log_GDP_n = log1p(`GDP.current.US$`),
     log_GDP_r = log1p(`GDP, PPP (constant 2017 international $)`),
     log_GDP_r_pc = log1p(`GDP per capita, PPP (constant 2017 international $)`),
     log_battle = log1p(fatalities.y.Battles))
 ```
+
+We can switch between the two nominal GDP measures by trading total_GDP_n_ID for `GDP.current.US$` (and vice versa).
 
 Guide to new variables:
 total_FDI_n = nominal total FDI (from nominal GDP numbers in current $US)
@@ -240,12 +273,12 @@ data %>%
 sums %>%
   ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
   geom_point() +
-  labs(title = "FDI ranges compared", subtitle = "The ratio between nominal and real FDI is not equal between all countries.")
+  labs(title = "FDI ranges compared", subtitle = "The ratio between nominal and real FDI is not equal between all countries, but they are similar.")
 
 sums %>%
   ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
   geom_point() +
-  labs(title = "Logged FDI ranges compared", subtitle = "Nominal and real FDI differences are  smoothed out through logs.")
+  labs(title = "Logged FDI ranges compared", subtitle = "Nominal and real FDI differences are even more smoothed out through logs.")
 ```
 
 Models we would like to run:
@@ -285,7 +318,7 @@ Model 2a adds battle deaths as a covariate. Passengers is not significant.
 ```{r model.3a, message=TRUE, warning=TRUE}
 model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data)
 summary(model.3a)
-bptest(model.3a) #fail to reject null that variance of error term is constant, but it's close! some homoskedascity likely present.
+bptest(model.3a) #fail to reject null that variance of error term is constant.
 ```
 Model 3a adds nominal GDP as a covariate. Passengers is not significant.
 
@@ -293,7 +326,7 @@ Model 3a adds nominal GDP as a covariate. Passengers is not significant.
 ```{r model.4a, message=TRUE, warning=TRUE}
 model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
 summary(model.4a)
-bptest(model.4a) #reject null that variance of error term is constant. homoskedascity likely present.
+bptest(model.4a) #fail to reject null that variance of error term is constant. 
 ```
 Instead of nominal GDP, Model 4a adds real GDP as a covariate. With the full range of countries and years, this is not significant.
 
@@ -383,7 +416,7 @@ data_Eur %>%
 sums %>%
   ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
   geom_point() +
-  labs(title = "FDI ranges compared (Eur)", subtitle = "The ratio between nominal and real FDI is more similar.")
+  labs(title = "FDI ranges compared (Eur)", subtitle = "The ratio between nominal and real FDI is even more similar.")
 
 sums %>%
   ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
@@ -415,7 +448,7 @@ Model 2a adds battle deaths as a covariate. Passengers becomes significant.
 ```{r model.3a, message=TRUE, warning=TRUE}
 model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data_Eur)
 summary(model.3a)
-bptest(model.3a) #reject null that variance of error term is constant. homoskedascity likely present.
+bptest(model.3a) #fail to reject null that variance of error term is constant.
 ```
 Model 3a adds nominal GDP as a covariate. Passengers loses its significance.
 
