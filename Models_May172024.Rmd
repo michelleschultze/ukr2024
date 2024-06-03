@@ -143,6 +143,8 @@ data <- data %>%
   left_join(ppp, by = c("Country.Name", "year"))
 ```
 
+*Now deprecated: Addressing that the nominal GDP measures are different*
+We will use real FDI as the Y instead to undercut any potential spurious correlation from inflation trends.
 Since I couldn't find nominal GDP data in constant 2017 international$, we'll fix the nominal GDP variable using the GDP deflator: we want both GDP terms to be in the same terms (constant 2017 $international).
 ```{r}
 # GDP deflator = nominal/real * 100
@@ -154,8 +156,6 @@ data <- data %>%
 #before reporting, check that this is the proper way to do this. (says "inflation" in the title of the variable which doesn't sound like what we want? But this is supposed to be the GDP deflator.. )
 # chatgpt confirms √: mutate(Nominal_GDP = GDP_PPP * (GDP_deflator / 100))
 ```
-
-**Addressing that the nominal GDP measures are different**
 
 After running subsequent models with different nominal GDP measurements, they generate different results. Let's study the difference between the international$ and USD versions of nominal GDP. This chart represents the massive differences between the nominal FDI numbers that we can use in the models.
 ```{r}
@@ -169,8 +169,7 @@ data %>%
   geom_point() +
   labs(title = "Comparing LOGGED nominal GDP measures", subtitle = "Both generated using World Bank data", x = "Nominal GDP in terms of constant 2017 international$, converted using deflator", y = "Nominal GDP in terms of current US$, imported directly")
 ```
-
-These align fairly well. The measures seem to correlate. 
+*end of deprecated portion*
 
 Create some logged variables:
 ```{r vars, message=FALSE, warning=FALSE}
@@ -188,7 +187,7 @@ data <- data %>%
 We can switch between the two nominal GDP measures by trading total_GDP_n_ID for `GDP.current.US$` (and vice versa).
 
 Guide to new variables:
-total_FDI_n = nominal total FDI (from nominal GDP numbers in current $US)
+total_FDI_n = nominal total FDI (using GDP in constant 2017 international$, which was calculated using GDP deflator from PPP measures)
 total_FDI_r = real total FDI (from PPP GDP numbers in current $US)
 log_FDI_n = nominal total FDI, logged+1
 log_FDI_r = real total FDI, logged+1
@@ -284,75 +283,87 @@ sums %>%
 Models we would like to run:
 
 No FE: 
-(1a) log(total FDI) = lag(percentage change in passengers flying in)
-(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
-(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
-(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
-(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
-
-W/ Country FE:
-(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
-(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
-(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
+(1a) FDI = pass + ε
+log(total real FDI) = lag(percentage change in passengers flying in)
+(2a) FDI = pass + ACLED + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(3a)  FDI = pass + ACLED + real GDP + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
+(4a) FDI = pass + ACLED + real GDP per capita + ε 
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
+(5ai) FDI = pass + ACLED + nominal GDP int$ + ε
+log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
+(5aii) FDI = pass + ACLED + nominal GDP US$ + ε
+log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
+(6a) FDI = pass + ACLED + real GDP per capita + inflation deflator + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
 
 MODELS WITHOUT FIXED EFFECTS
 
-(1a) log(total FDI) = lag(percentage change in passengers flying in)
+(1a) FDI = pass + ε
+log(total real FDI) = lag(percentage change in passengers flying in)
 ```{r model.1a, message=TRUE, warning=TRUE}
-model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data)
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data)
 summary(model.1a)
 bptest(model.1a) #fail to reject null that variance of error term is constant.
 ```
-Model 1a is the most basic model, yet we see the coefficient of interest is significant at a 10% level.
-When we ran the model with a smaller range of countries and with only the range 2010-2019, this was not significant.
+Model 1a is the most basic model, and we see the coefficient of interest is not significant. Heteroskedascity not rejected.
 
-(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(2a) FDI = pass + ACLED + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
 ```{r model.2a, message=TRUE, warning=TRUE}
-model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
 summary(model.2a)
 bptest(model.2a) #fail to reject null that variance of error term is constant.
 ```
-Model 2a adds battle deaths as a covariate. Passengers is not significant.
+Model 2a adds battle deaths as a covariate. Passengers is not significant, and battle deaths is slightly significant at the 10% level. Joint significance not present, and we have weak evidence for homoskedascity.
 
-(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
+*Adding different GDP measures*
+(3a) FDI = pass + ACLED + real GDP + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
 ```{r model.3a, message=TRUE, warning=TRUE}
-model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data)
+model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
 summary(model.3a)
 bptest(model.3a) #fail to reject null that variance of error term is constant.
 ```
-Model 3a adds nominal GDP as a covariate. Passengers is not significant.
+Model 3a adds real GDP as a covariate. Passengers is not significant, but the coefficients are jointly significant.
 
-(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
+(3b) FDI = pass + ACLED + real GDP per capita + ε 
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
 ```{r model.4a, message=TRUE, warning=TRUE}
-model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
-summary(model.4a)
-bptest(model.4a) #fail to reject null that variance of error term is constant. 
+model.3b <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
+summary(model.3b)
+bptest(model.3b) #fail to reject null that variance of error term is constant. 
 ```
-Instead of nominal GDP, Model 4a adds real GDP as a covariate. With the full range of countries and years, this is not significant.
+Instead of total real GDP, Model 3b adds per capita real GDP as a covariate. Joint significance still present, though the coefficient is not significant.
 
 
-
-
-Before we added the full range of countries and years, the passengers variable was significant at the 10% level. This is likely because controlling for the real value of the local currency the year before helps to explain much of the variation in FDI the following year.
-
-Model 4a demonstrates that, other factors held constant, a 1% increase in passengers from one year is associated with a 0.0011399% increase (+0.114%) in nominal FDI the following year. 
-Scaling up, this means a 100% increase in passengers is associated with a 11.399% increase in nominal FDI the following year!
-
-(5a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP))
+(3ci) FDI = pass + ACLED + nominal GDP int$ + ε
+log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
 ```{r model.5a, message=TRUE, warning=TRUE}
-model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
-summary(model.5a)
-bptest(model.5a) #reject null that variance of error term is constant. homoskedascity likely present.
+model.3ci <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data)
+summary(model.3ci)
+bptest(model.3ci) #reject null that variance of error term is constant. homoskedascity likely present.
 ```
-Including per capita real GDP instead makes the passengers variable insignificant again.
-Does this effect carry over when we run it with nominal GDP AND per capita real GDP instead?
-```{r model.6a, message=TRUE, warning=TRUE}
-model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc) + lag(log_GDP_n), data = data)
-summary(model.6a)
-bptest(model.6a) #fail to reject null that variance of error term is constant.
+Not significant, but joint significance remains.
+
+(3cii) FDI = pass + ACLED + nominal GDP US$ + ε
+log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
+```{r model.3cii, message=TRUE, warning=TRUE}
+model.3cii <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data)
+summary(model.3cii)
+bptest(model.3cii) #reject null that variance of error term is constant. homoskedascity likely present.
 ```
-Yes. It looks like controlling for per capita GDP soaks up much of the variation regarding total FDI maybe because it is a population-weighted variable. 
-[do more thinking about this]
+The sign on the coefficient flips, and the coefficient is even less significant. Joint significance remains... is this defunct?
+
+(4a) FDI = pass + ACLED + real GDP per capita + inflation deflator + ε
+log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
+```{r model.3cii, message=TRUE, warning=TRUE}
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data)
+summary(model.4a)
+bptest(model.4a) #reject null that variance of error term is constant. homoskedascity likely present.
+```
+Positive beta, joint significance remains when adding inflation deflator as a covariate.
 
 
 
@@ -430,7 +441,7 @@ MODELS
 
 (1a) log(total FDI) = lag(percentage change in passengers flying in)
 ```{r model.1a, message=TRUE, warning=TRUE}
-model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data_Eur)
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data_Eur)
 summary(model.1a)
 bptest(model.1a) #fail to reject null that variance of error term is constant.
 ```
@@ -438,7 +449,7 @@ Model 1a is the most basic model. The coefficient is NOT significant (unlike the
 
 (2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
 ```{r model.2a, message=TRUE, warning=TRUE}
-model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
 summary(model.2a)
 bptest(model.2a) #fail to reject null that variance of error term is constant.
 ```
@@ -446,7 +457,7 @@ Model 2a adds battle deaths as a covariate. Passengers becomes significant.
 
 (3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
 ```{r model.3a, message=TRUE, warning=TRUE}
-model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data_Eur)
+model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data_Eur)
 summary(model.3a)
 bptest(model.3a) #fail to reject null that variance of error term is constant.
 ```
@@ -454,7 +465,7 @@ Model 3a adds nominal GDP as a covariate. Passengers loses its significance.
 
 (4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
 ```{r model.4a, message=TRUE, warning=TRUE}
-model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
 summary(model.4a)
 bptest(model.4a) #fail to reject null that variance of error term is constant.
 ```
