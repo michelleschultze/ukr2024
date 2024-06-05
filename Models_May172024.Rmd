@@ -9,6 +9,8 @@ output:
   word_document: default
 ---
 
+testing migrated computer 
+
 ```{r packages, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(dplyr)
