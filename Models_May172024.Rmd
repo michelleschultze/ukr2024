@@ -23,8 +23,10 @@ library("microsynth")
 library("LowRankQP")
 #install.packages("plm")
 library(plm)
+library(lmtest)
+library(modelsummary)
 
-setwd('/Users/michelleschultze/ukr2024')
+setwd('/Users/michelle/Documents/ukr2024')
 data0 <- read_csv("data/NEWDATA_May172024.csv") #no NAs, range 2010-2019
 data <- read_csv("data/FULLDATA_NAs_May242024.csv") #NAs, range 2000-2019
 ```
@@ -1186,6 +1188,77 @@ cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change i
 
 msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Nominal FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
 ```
+
+Some relevant case studies
+```{r}
+data %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Full dataset")
+
+data %>%
+  filter(Country.Name == "Somalia") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Somalia")
+
+data %>%
+  filter(Country.Name == "Tunisia") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Tunisia")
+
+data %>%
+  filter(Country.Name == "Eritrea") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Eritrea")
+
+data %>%
+  filter(Country.Name == "Ethiopia") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Ethiopia")
+
+data %>%
+  filter(Country.Name == "Sudan") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Sudan")
+
+data %>%
+  filter(Country.Name == "Burundi") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Burundi")
+
+data %>%
+  filter(Country.Name == "Lebanon") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Lebanon")
+
+data %>%
+  filter(Country.Name == "Rwanda") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Rwanda")
+
+data %>%
+  filter(Country.Name == "Bosnia and Herzegovina") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Bosnia and Herzegovina")
+
+data %>%
+  filter(Country.Name == "Sri Lanka") %>%
+  ggplot(mapping = aes(x = year, y = total.passengers.in)) +
+    geom_point() +
+  labs(title = "Total.passengers.in over time", subtitle = "Sri Lanka")
+```
+
+
+
 
 
 
