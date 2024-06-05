@@ -174,10 +174,12 @@ data %>%
 Create some logged variables:
 ```{r vars, message=FALSE, warning=FALSE}
 data <- data %>% 
-  mutate(total_FDI_n = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$`,
-         total_FDI_r = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (constant 2017 international $)`,
+  mutate(total_FDI_n = (Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100),
+         total_FDI_r = (Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP, PPP (constant 2017 international $)` / 100),
     log_FDI_n = log1p(total_FDI_n),
     log_FDI_r = log1p(total_FDI_r),
+    ihs_FDI_n = asinh(total_FDI_n),
+    ihs_FDI_r = asinh(total_FDI_r),
     log_GDP_n = log1p(`GDP.current.US$`),
     log_GDP_r = log1p(`GDP, PPP (constant 2017 international $)`),
     log_GDP_r_pc = log1p(`GDP per capita, PPP (constant 2017 international $)`),
@@ -189,8 +191,10 @@ We can switch between the two nominal GDP measures by trading total_GDP_n_ID for
 Guide to new variables:
 total_FDI_n = nominal total FDI (using GDP in constant 2017 international$, which was calculated using GDP deflator from PPP measures)
 total_FDI_r = real total FDI (from PPP GDP numbers in current $US)
-log_FDI_n = nominal total FDI, logged+1
-log_FDI_r = real total FDI, logged+1
+log_FDI_n = nominal total FDI, with log+1 transformation
+log_FDI_r = real total FDI, with log+1 transformation
+ihs_FDI_n = nominal total FDI, with IHS transformation
+ihs_FDI_r = real total FDI, with IHS transformation
 log_GDP_n = nominal GDP, logged+1
 log_GDP_r = real GDP, logged+1
 log_GDP_r_pc = real GDP per capita, logged+1
@@ -223,7 +227,6 @@ data %>%
   geom_point() +
   labs(title = "Change in passengers flying into the country (cont.)", subtitle = "After removing outliers, still some high outliers emerge.")
 ```
-
 
 ```{r}
 sums <- data %>%
@@ -264,10 +267,10 @@ data %>%
   labs(title = "FDI levels over time", subtitle = "Clustered somewhere above zero.")
 
 data %>%
-  ggplot(mapping = aes(x = year, y = log1p(total_FDI_r), color = "Logged real FDI", alpha = 0.5)) +
+  ggplot(mapping = aes(x = year, y = ihs_FDI_r, color = "IHS-transformed real FDI", alpha = 0.5)) +
   geom_point() +
-  geom_point(data = data, mapping = aes(x = year, y = log1p(total_FDI_n), color = "Logged nominal FDI", alpha = 0.5)) +
-  labs(title = "Logged  FDI levels over time", subtitle = "Clustered somewhere above zero.")
+  geom_point(data = data, mapping = aes(x = year, y = ihs_FDI_n, color = "IHS-transformed nominal FDI", alpha = 0.5)) +
+  labs(title = "IHS-transformed  FDI levels over time", subtitle = "Clustered somewhere above zero.")
 
 sums %>%
   ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
@@ -277,97 +280,202 @@ sums %>%
 sums %>%
   ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
   geom_point() +
-  labs(title = "Logged FDI ranges compared", subtitle = "Nominal and real FDI differences are even more smoothed out through logs.")
+  labs(title = "Logged FDI ranges compared", subtitle = "Nominal and real FDI differences are even more smoothed out through logs (or IHS).")
 ```
 
 Models we would like to run:
 
 No FE: 
 (1a) FDI = pass + ε
-log(total real FDI) = lag(percentage change in passengers flying in)
+ihs(total real FDI) = lag(percentage change in passengers flying in)
 (2a) FDI = pass + ACLED + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
-(3a)  FDI = pass + ACLED + real GDP + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
-(4a) FDI = pass + ACLED + real GDP per capita + ε 
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
-(5ai) FDI = pass + ACLED + nominal GDP int$ + ε
-log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
-(5aii) FDI = pass + ACLED + nominal GDP US$ + ε
-log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
-(6a) FDI = pass + ACLED + real GDP per capita + inflation deflator + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
-
-MODELS WITHOUT FIXED EFFECTS
-
-(1a) FDI = pass + ε
-log(total real FDI) = lag(percentage change in passengers flying in)
-```{r model.1a, message=TRUE, warning=TRUE}
-model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data)
-summary(model.1a)
-bptest(model.1a) #fail to reject null that variance of error term is constant.
-```
-Model 1a is the most basic model, and we see the coefficient of interest is not significant. Heteroskedascity not rejected.
-
-(2a) FDI = pass + ACLED + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
-```{r model.2a, message=TRUE, warning=TRUE}
-model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
-summary(model.2a)
-bptest(model.2a) #fail to reject null that variance of error term is constant.
-```
-Model 2a adds battle deaths as a covariate. Passengers is not significant, and battle deaths is slightly significant at the 10% level. Joint significance not present, and we have weak evidence for homoskedascity.
-
-*Adding different GDP measures*
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
 (3a) FDI = pass + ACLED + real GDP + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
-```{r model.3a, message=TRUE, warning=TRUE}
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
+(4a) FDI = pass + ACLED + real GDP per capita + ε 
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
+(5a) FDI = pass + ACLED + nominal GDP int$ + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
+(6a) FDI = pass + ACLED + nominal GDP US$ + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
+(7a) FDI = pass + ACLED + real GDP per capita + inflation deflator + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
+(8a) FDI = pass + ACLED + real GDP per capita + inflation deflator + GDP growth + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate) + lag(GDP.growth.annual.pct)
+
+MODELS
+
+IHS-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct), data = data)
+models[["IHS-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["IHS-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
+models[["IHS-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["IHS-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
+models[["IHS-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["IHS-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
+models[["IHS-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["IHS-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data)
+models[["IHS-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["IHS-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data)
+models[["IHS-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["IHS-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data)
+models[["IHS-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["IHS-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data)
+models[["IHS-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["IHS-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "IHS-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+Source: https://stackoverflow.com/questions/62610249/modelsummary-kableextra-regression-table-with-models-of-the-same-name 
+
+Log-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data)
+models[["Log-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
+models[["Log-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
 model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
-summary(model.3a)
-bptest(model.3a) #fail to reject null that variance of error term is constant.
+models[["Log-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
+models[["Log-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data)
+models[["Log-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data)
+models[["Log-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data)
+models[["Log-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data)
+models[["Log-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
 ```
-Model 3a adds real GDP as a covariate. Passengers is not significant, but the coefficients are jointly significant.
 
-(3b) FDI = pass + ACLED + real GDP per capita + ε 
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
-```{r model.4a, message=TRUE, warning=TRUE}
-model.3b <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
-summary(model.3b)
-bptest(model.3b) #fail to reject null that variance of error term is constant. 
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
 ```
-Instead of total real GDP, Model 3b adds per capita real GDP as a covariate. Joint significance still present, though the coefficient is not significant.
 
+Log-Transformed Nominal FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
 
-(3ci) FDI = pass + ACLED + nominal GDP int$ + ε
-log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
-```{r model.5a, message=TRUE, warning=TRUE}
-model.3ci <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data)
-summary(model.3ci)
-bptest(model.3ci) #reject null that variance of error term is constant. homoskedascity likely present.
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data)
+models[["Log-Transformed Nominal FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Nominal FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data)
+models[["Log-Transformed Nominal FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Nominal FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data)
+models[["Log-Transformed Nominal FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Nominal FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data)
+models[["Log-Transformed Nominal FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Nominal FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data)
+models[["Log-Transformed Nominal FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Nominal FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data)
+models[["Log-Transformed Nominal FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Nominal FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data)
+models[["Log-Transformed Nominal FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Nominal FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data)
+models[["Log-Transformed Nominal FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Nominal FDI"]][["8a"]] <- bptest(model.8a)
 ```
-Not significant, but joint significance remains.
 
-(3cii) FDI = pass + ACLED + nominal GDP US$ + ε
-log(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
-```{r model.3cii, message=TRUE, warning=TRUE}
-model.3cii <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data)
-summary(model.3cii)
-bptest(model.3cii) #reject null that variance of error term is constant. homoskedascity likely present.
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Nominal FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
 ```
-The sign on the coefficient flips, and the coefficient is even less significant. Joint significance remains... is this defunct?
-
-(4a) FDI = pass + ACLED + real GDP per capita + inflation deflator + ε
-log(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
-```{r model.3cii, message=TRUE, warning=TRUE}
-model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data)
-summary(model.4a)
-bptest(model.4a) #reject null that variance of error term is constant. homoskedascity likely present.
-```
-Positive beta, joint significance remains when adding inflation deflator as a covariate.
 
 
 
 
+
+***Just Europe***
 
 Just European countries:
 ```{r}
@@ -376,7 +484,7 @@ data_Eur <- data %>%
 unique(data_Eur$Country.Name)
 ```
 
-Repeat some of the analysis here:
+Repeat some of the descriptive stats here:
 
 ```{r}
 data_Eur %>%
@@ -384,7 +492,6 @@ data_Eur %>%
   geom_point() +
   labs(title = "Change in passengers flying into the country (Eur)", subtitle = "Europe has a similar pattern to the rest of the world.")
 ```
-
 
 ```{r}
 sums <- data_Eur %>%
@@ -435,41 +542,410 @@ sums %>%
   labs(title = "Logged FDI ranges compared (Eur)", subtitle = "Nominal and real FDI differences are smoothed out through logs.")
 ```
 
+MODELS
+
+IHS-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["IHS-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["IHS-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["IHS-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["IHS-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["IHS-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["IHS-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["IHS-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_Eur)
+models[["IHS-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["IHS-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "IHS-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+
+Log-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_Eur)
+models[["Log-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+
+Log-Transformed Nominal FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Nominal FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Nominal FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Nominal FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Nominal FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Nominal FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Nominal FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Nominal FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_Eur)
+models[["Log-Transformed Nominal FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Nominal FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Nominal FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+
+
+
+
+
+***Just Middle Income Countries***
+
+Just Middle Income countries:
+```{r}
+data_MI <- data %>%
+  filter(Country.Name %in% c("Algeria", "Angola", "Bangladesh", "Benin", "Bhutan", "Bolivia", "Cabo Verde", "Cambodia", "Cameroon", "Comoros", "Congo, Rep.", "Côte d'Ivoire", "Djibouti", "Egypt", "Eswatini", "Ghana", "Guinea", "Haiti", "Honduras", "India", "Iran", "Jordan", "Kenya", "Kiribati", "Kyrgyz Republic", "Lao PDR", "Lebanon", "Lesotho", "Mauritania", "Micronesia", "Mongolia", "Morocco", "Myanmar", "Nepal", "Nicaragua", "Nigeria", "Pakistan", "Papua New Guinea", "Philippines", "Samoa", "São Tomé and Príncipe", "Senegal", "Solomon Islands", "Sri Lanka", "Tajikistan", "Tanzania", "Timor-Leste", "Tunisia", "Ukraine", "Uzbekistan", "Vanuatu", "Vietnam", "Zambia", "Zimbabwe", "Albania", "Argentina", "Armenia", "Azerbaijan", "Belarus", "Belize", "Bosnia and Herzegovina", "Botswana", "Brazil", "Bulgaria", "China", "Colombia", "Costa Rica", "Cuba", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "Equatorial Guinea", "Fiji", "Gabon", "Georgia", "Grenada", "Guatemala", "Indonesia", "Iraq", "Jamaica", "Kazakhstan", "Kosovo", "Libya", "Malaysia", "Maldives", "Marshall Islands", "Mauritius", "Mexico", "Moldova", "Montenegro", "Namibia", "North Macedonia", "Palau", "Paraguay", "Peru", "Russian Federation", "Serbia", "South Africa", "St. Lucia", "St. Vincent and the Grenadines", "Suriname", "Thailand", "Tonga", "Türkiye", "Turkmenistan", "Tuvalu"))
+unique(data_MI$Country.Name)
+```
+
+Repeat some of the descriptive stats here:
+
+```{r}
+data_MI %>%
+  ggplot(mapping = aes(x = year, y = passengers.in.change.pct)) +
+  geom_point() +
+  labs(title = "Change in passengers flying into the country (Eur)", subtitle = "MI Countries have wider variation.")
+```
+
+```{r}
+sums <- data_MI %>%
+  group_by(Country.Name) %>%
+  summarize(min_year = min(year),
+            max_year = max(year),
+            range_years = (max(year) - min(year)),
+            min_FDI_n = min(total_FDI_n),
+            max_FDI_n = max(total_FDI_n),
+            range_FDI_n = (max(total_FDI_n) - min(total_FDI_n)),
+            min_FDI_r = min(total_FDI_r),
+            max_FDI_r = max(total_FDI_r),
+            range_FDI_r = (max(total_FDI_r) - min(total_FDI_r)),
+            min_pass = min(passengers.in.change.pct),
+            max_pass = max(passengers.in.change.pct),
+            range_pass = (max(passengers.in.change.pct) - min(passengers.in.change.pct)))
+
+sums
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(x = min_pass, y = max_pass)) +
+  geom_point() +
+  labs(title = "Min and max of the 'percent change in passengers' variable", subtitle = "Slightly more variation than the rest of the world.")
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(y = range_years)) +
+    geom_bar() +
+  labs(title = "Year ranges in the full dataset", subtitle = "Higher proportion of countries DON'T have the full range of data N=19")
+
+data_MI %>%
+  ggplot(mapping = aes(x = year, y = total_FDI_r, color = "Real FDI", alpha = 0.5)) +
+  geom_point() +
+  geom_point(data = data, mapping = aes(x = year, y = total_FDI_n, color = "Nominal FDI", alpha = 0.5)) +
+  labs(title = "FDI levels over time (MI)", subtitle = "Clustered somewhere above zero.")
+
+sums %>%
+  ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
+  geom_point() +
+  labs(title = "FDI ranges compared (MI)", subtitle = "The ratio between nominal and real FDI is even more similar.")
+
+sums %>%
+  ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
+  geom_point() +
+  labs(title = "Logged FDI ranges compared (MI)", subtitle = "Nominal and real FDI differences are smoothed out through logs.")
+```
 
 MODELS
 
+IHS-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
 
-(1a) log(total FDI) = lag(percentage change in passengers flying in)
-```{r model.1a, message=TRUE, warning=TRUE}
-model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data_Eur)
-summary(model.1a)
-bptest(model.1a) #fail to reject null that variance of error term is constant.
+model.1a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["IHS-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["IHS-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["IHS-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["IHS-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["IHS-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["IHS-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["IHS-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_MI)
+models[["IHS-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["IHS-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
 ```
-Model 1a is the most basic model. The coefficient is NOT significant (unlike the world set).
 
-(2a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
-```{r model.2a, message=TRUE, warning=TRUE}
-model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_Eur)
-summary(model.2a)
-bptest(model.2a) #fail to reject null that variance of error term is constant.
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "IHS-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
 ```
-Model 2a adds battle deaths as a covariate. Passengers becomes significant.
 
-(3a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths))
-```{r model.3a, message=TRUE, warning=TRUE}
-model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_n), data = data_Eur)
-summary(model.3a)
-bptest(model.3a) #fail to reject null that variance of error term is constant.
+Log-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data_MI)
+models[["Log-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_MI)
+models[["Log-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_MI)
+models[["Log-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_MI)
+models[["Log-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_MI)
+models[["Log-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_MI)
+models[["Log-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_MI)
+models[["Log-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_MI)
+models[["Log-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
 ```
-Model 3a adds nominal GDP as a covariate. Passengers loses its significance.
 
-(4a) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP in PPP terms))
-```{r model.4a, message=TRUE, warning=TRUE}
-model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_Eur)
-summary(model.4a)
-bptest(model.4a) #fail to reject null that variance of error term is constant.
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
 ```
-Instead of nominal GDP, Model 4a adds real GDP as a covariate. Limited to europe, the passengers variable IS significant.
+
+Log-Transformed Nominal FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Nominal FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Nominal FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Nominal FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Nominal FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Nominal FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Nominal FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Nominal FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_MI)
+models[["Log-Transformed Nominal FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Nominal FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Nominal FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
 
 
 
@@ -477,26 +953,288 @@ Instead of nominal GDP, Model 4a adds real GDP as a covariate. Limited to europe
 
 
 
+***Just Lower Middle Income Countries***
+
+Just Lower Middle Income countries:
+```{r}
+data_LMI <- data %>%
+  filter(Country.Name %in% c("Algeria", "Angola", "Bangladesh", "Benin", "Bhutan", "Bolivia", "Cabo Verde", "Cambodia", "Cameroon", "Comoros", "Congo, Rep.", "Côte d'Ivoire", "Djibouti", "Egypt", "Eswatini", "Ghana", "Guinea", "Haiti", "Honduras", "India", "Iran", "Jordan", "Kenya", "Kiribati", "Kyrgyz Republic", "Lao PDR", "Lebanon", "Lesotho", "Mauritania", "Micronesia", "Mongolia", "Morocco", "Myanmar", "Nepal", "Nicaragua", "Nigeria", "Pakistan", "Papua New Guinea", "Philippines", "Samoa", "São Tomé and Príncipe", "Senegal", "Solomon Islands", "Sri Lanka", "Tajikistan", "Tanzania", "Timor-Leste", "Tunisia", "Ukraine", "Uzbekistan", "Vanuatu", "Vietnam", "Zambia", "Zimbabwe"))
+unique(data_LMI$Country.Name)
+```
+
+Repeat some of the descriptive stats here:
+
+```{r}
+data_LMI %>%
+  ggplot(mapping = aes(x = year, y = passengers.in.change.pct)) +
+  geom_point() +
+  labs(title = "Change in passengers flying into the country (Eur)", subtitle = "MI Countries have wider variation.")
+```
+
+```{r}
+sums <- data_LMI %>%
+  group_by(Country.Name) %>%
+  summarize(min_year = min(year),
+            max_year = max(year),
+            range_years = (max(year) - min(year)),
+            min_FDI_n = min(total_FDI_n),
+            max_FDI_n = max(total_FDI_n),
+            range_FDI_n = (max(total_FDI_n) - min(total_FDI_n)),
+            min_FDI_r = min(total_FDI_r),
+            max_FDI_r = max(total_FDI_r),
+            range_FDI_r = (max(total_FDI_r) - min(total_FDI_r)),
+            min_pass = min(passengers.in.change.pct),
+            max_pass = max(passengers.in.change.pct),
+            range_pass = (max(passengers.in.change.pct) - min(passengers.in.change.pct)))
+
+sums
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(x = min_pass, y = max_pass)) +
+  geom_point() +
+  labs(title = "Min and max of the 'percent change in passengers' variable", subtitle = "Much more variation than the rest of the world.")
+```
+
+```{r}
+sums %>%
+  ggplot(mapping = aes(y = range_years)) +
+    geom_bar() +
+  labs(title = "Year ranges in the full dataset", subtitle = "Higher proportion of countries DON'T have the full range of data N=19")
+
+data_LMI %>%
+  ggplot(mapping = aes(x = year, y = total_FDI_r, color = "Real FDI", alpha = 0.5)) +
+  geom_point() +
+  geom_point(data = data, mapping = aes(x = year, y = total_FDI_n, color = "Nominal FDI", alpha = 0.5)) +
+  labs(title = "FDI levels over time (MI)", subtitle = "Clustered somewhere above zero.")
+
+sums %>%
+  ggplot(mapping = aes(x = range_FDI_r, y = range_FDI_n)) +
+  geom_point() +
+  labs(title = "FDI ranges compared (MI)", subtitle = "The ratio between nominal and real FDI is even more similar.")
+
+sums %>%
+  ggplot(mapping = aes(x = log(range_FDI_r), y = log(range_FDI_n))) +
+  geom_point() +
+  labs(title = "Logged FDI ranges compared (MI)", subtitle = "Nominal and real FDI differences are smoothed out through logs.")
+```
+
+MODELS
+
+IHS-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["IHS-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["IHS-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["IHS-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["IHS-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["IHS-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["IHS-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["IHS-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(ihs_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_LMI)
+models[["IHS-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["IHS-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "IHS-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+
+Log-Transformed Real FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_r ~ lag(passengers.in.change.pct), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_r ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_LMI)
+models[["Log-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Real FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
+
+Log-Transformed Nominal FDI
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(log_FDI_n ~ lag(passengers.in.change.pct), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["1a"]] <- model.1a
+hsd_testing[["Log-Transformed Nominal FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["2a"]] <- model.2a
+hsd_testing[["Log-Transformed Nominal FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["3a"]] <- model.3a
+hsd_testing[["Log-Transformed Nominal FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r_pc), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["4a"]] <- model.4a
+hsd_testing[["Log-Transformed Nominal FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(total_GDP_n_ID)), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["5a"]] <- model.5a
+hsd_testing[["Log-Transformed Nominal FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log1p(`GDP.current.US$`)), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["6a"]] <- model.6a
+hsd_testing[["Log-Transformed Nominal FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["7a"]] <- model.7a
+hsd_testing[["Log-Transformed Nominal FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(log_FDI_n ~ lag(passengers.in.change.pct) + lag(log_battle) + lag(log_GDP_r) + lag(`Inflation.GDP.deflator.annual.pct`) + lag(GDP.growth.annual.pct), data = data_LMI)
+models[["Log-Transformed Nominal FDI"]][["8a"]] <- model.8a
+hsd_testing[["Log-Transformed Nominal FDI"]][["8a"]] <- bptest(model.8a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 'lag(passengers.in.change.pct)' = 'Change in passengers (%, lag)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(log_GDP_r_pc)' = 'Real GDP per capita (int$, log, lag)',
+         'lag(log1p(total_GDP_n_ID))' = 'Nominal GDP (int$, log, lag)',
+         'lag(log1p(`GDP.current.US$`))' = 'Nominal GDP (USD, log, lag)',
+         'lag(Inflation.GDP.deflator.annual.pct)' = 'Inflation GDP Deflator',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)')
+
+msummary(models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, gof_omit = 'IC|Log|Adj', title = "Log-Transfomed Nominal FDI", statistic = 'p.value', conf_level = 0.95, vcov = 'robust')
+```
 
 
 
 
 
+WITH FIXED EFFECTS
+FE included:
+(1b) FDI = pass + FE for country + FE for year + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in)
+(2b) FDI = pass + ACLED + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(3b) FDI = pass + ACLED + real GDP + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
+(4b) FDI = pass + ACLED + real GDP per capita + FE for country + FE for year +  ε 
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
+(5b) FDI = pass + ACLED + nominal GDP int$ + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
+(6b) FDI = pass + ACLED + nominal GDP US$ + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
+(7b) FDI = pass + ACLED + real GDP per capita + inflation deflator + FE for country + FE for year + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
+
+
+(1b) FDI = pass + FE for country + FE for year + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in)
+```{r}
+# Ensure the data is in the correct format for plm (panel data)
+test <- pdata.frame(data_Eur, index = c("Country.Name", "year"))
+
+model.1b <- plm(ihs_FDI_r ~ lag(passengers.in.change.pct), data = test, index = c("Country.Name", "year"), model = "within", effect = "twoways")
+summary(model.1b)
+bptest(model.1b)
+```
+
+
+(2b) FDI = pass + ACLED + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths))
+(3b) FDI = pass + ACLED + real GDP + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths))
+(4b) FDI = pass + ACLED + real GDP per capita + FE for country + FE for year +  ε 
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(real GDP per capita, PPP))
+(5b) FDI = pass + ACLED + nominal GDP int$ + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in int$ constant 2017))
+(6b) FDI = pass + ACLED + nominal GDP US$ + FE for country + FE for year +  ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) +  lag(log(ACLED battle deaths)) + lag(log(nominal GDP in USD current))
+(7b) FDI = pass + ACLED + real GDP per capita + inflation deflator + FE for country + FE for year + ε
+ihs(total real FDI) = lag(percentage change in passengers flying in) + lag(log(real total GDP)) + lag(log(ACLED battle deaths)) + lag(inflation_rate)
 
 
 
 
 
-
-
-
-To be added:
-
-W/ Country FE:
-(3b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + FE
-
-
-(4b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
-
-
-(5b) log(total FDI) = lag(percentage change in passengers flying in) + lag(log(total GDP)) + lag(log(ACLED battle deaths)) + lag(log(GDP per capita, PPP)) + FE
