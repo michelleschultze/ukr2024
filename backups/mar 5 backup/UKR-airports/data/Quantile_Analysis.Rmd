@@ -24,8 +24,8 @@ library(quantreg)
 #install.packages("openxlsx")
 library(openxlsx)
 
-setwd('/Users/michelle/Documents/UKR-airports')
-data <- read_csv("data/SCM_data.csv")
+setwd('/Users/michelle/Documents/ukr2024')
+data <- read_csv("data/NEWDATA_May172024.csv")
 ```
 
 Log several variables.
@@ -141,7 +141,7 @@ final_df <- rbind(coef_with_tau, additional_info)
 file_path <- "exported_tables.xlsx"
 
 # Export the combined data frame to Excel
-write.xlsx(final_df, file_path, rowNames = FALSE)
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
 ```
 
 ```{r plot1_alltaus}
@@ -270,7 +270,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -398,7 +398,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -527,7 +527,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -663,7 +663,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -734,7 +734,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -803,7 +803,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -874,7 +874,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1030,7 +1030,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1102,7 +1102,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1191,7 +1191,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1269,7 +1269,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1347,7 +1347,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1429,7 +1429,7 @@ current_col <- max(1, ncol(sheet_data) + 1)
 writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
 
 # Save the changes to the Excel file
-saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
 
 ```
 
@@ -1523,7 +1523,7 @@ final_df <- rbind(coef_with_tau, additional_info)
 file_path <- "exported_tables_total_FDI.xlsx"
 
 # Export the combined data frame to Excel
-write.xlsx(final_df, file_path, rowNames = FALSE)
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
 ```
 
 ```{r plot5_alltaus}
@@ -2781,7 +2781,7 @@ final_df <- rbind(coef_with_tau, additional_info)
 file_path <- "exported_tables_total_FDI_w_controls.xlsx"
 
 # Export the combined data frame to Excel
-write.xlsx(final_df, file_path, rowNames = FALSE)
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
 ```
 
 ```{r plot9_alltaus}
@@ -3328,7 +3328,7 @@ final_df <- rbind(coef_with_tau, additional_info)
 file_path <- "exported_tables_pct_changes.xlsx"
 
 # Export the combined data frame to Excel
-write.xlsx(final_df, file_path, rowNames = FALSE)
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
 ```
 
 ```{r plot14_alltaus}
