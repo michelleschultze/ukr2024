@@ -1,0 +1,5232 @@
+---
+title: 'Quantile Analysis'
+author: "Michelle Schultze"
+date: "2024-02-02"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+Load in packages.
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+library("readr")
+library("microsynth")
+library("LowRankQP")
+#install.packages("quantreg")
+library(quantreg)
+#install.packages("openxlsx")
+library(openxlsx)
+
+setwd('/Users/michelle/Documents/ukr2024')
+data <- read_csv("data/NEWDATA_May172024.csv")
+```
+
+Log several variables.
+```{r log-vars}
+data2 <- data %>%
+  select(Country.Name, year, Foreign.direct.investment.net.inflows.pct.of.GDP, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_civilian_violence_fatalities <- log1p(data2$fatalities.y.Violence.against.civilians)
+data2$ln_events <- log1p(data2$count.events.y.All.types.of.violent.conflict)
+
+#data2$ln_pass <- replace(data2$ln_pass, is.infinite(data2$ln_pass) & data2$ln_pass < 0, 0)
+#data2$ln_battle_fatalities <- replace(data2$ln_battle_fatalities, is.infinite(data2$ln_battle_fatalities) & data2$ln_battle_fatalities < 0, 0)
+#data2$ln_civilian_violence_fatalities <- replace(data2$ln_civilian_violence_fatalities, is.infinite(data2$ln_civilian_violence_fatalities) & data2$ln_civilian_violence_fatalities < 0, 0)
+#data2$ln_events <- replace(data2$ln_events, is.infinite(data2$ln_events) & data2$ln_events < 0, 0)
+```
+
+#Basic quantile model: FDI on ln(passengers_in_total)
+```{r quantile1}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r specify-function}
+# Create a function to extract coefficients with stars
+extract_coefficients <- function(summary_output) {
+  # Initialize an empty vector to store coefficients
+  coef_vector <- character()
+  
+  # Loop through each set of coefficients
+  for (i in 1:length(summary_output)) {
+    # Extract coefficients and p-values
+    coefficients <- summary_output[[i]]$coefficients[, 1]
+    p_values <- summary_output[[i]]$coefficients[, 4]
+    
+    # Compute stars based on p-values
+    stars <- ifelse(p_values < 0.001, "***",
+                    ifelse(p_values < 0.01, "**",
+                           ifelse(p_values < 0.05, "*",
+                                  ifelse(p_values < 0.1, ".", ""))))
+    
+    # Combine coefficients with stars
+    coef_with_stars <- paste0(signif(coefficients, digits = 4), stars)
+    
+    # Append to the coef_vector
+    coef_vector <- c(coef_vector, coef_with_stars)
+  }
+  
+  return(coef_vector)
+}
+
+# Create a function to extract coefficients withOUT stars
+extract_coefficients_nostars <- function(summary_output) {
+  # Initialize an empty vector to store coefficients
+  coef_vector <- character()
+  
+  # Loop through each set of coefficients
+  for (i in 1:length(summary_output)) {
+    # Extract coefficients and p-values
+    coefficients <- summary_output[[i]]$coefficients[, 1]
+    p_values <- summary_output[[i]]$coefficients[, 4]
+    
+    # Combine coefficients with stars
+    coef_without_stars <- paste0(signif(coefficients, digits = 4))
+    
+    # Append to the coef_vector
+    coef_vector <- c(coef_vector, coef_without_stars)
+  }
+  
+  return(coef_vector)
+}
+```
+
+```{r extract_coefficients_significance}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Specify the file path where you want to save the Excel file
+file_path <- "exported_tables.xlsx"
+
+# Export the combined data frame to Excel
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
+```
+
+```{r plot1_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot1_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot1}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot1.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+#(1): Running the quantile regression with ACLED numbers as a weight
+From the documentation: "The WEIGHT statement specifies a weight variable in the input data set. To request weighted quantile regression, place the weights in a variable. The values of the WEIGHT variable can be nonintegral and are not truncated. Observations with nonpositive or missing values for the weight variable do not contribute to the fit of the model."
+https://support.sas.com/documentation/onlinedoc/stat/142/qreg.pdf 
+
+Weighing by battle fatalities:
+```{r quantile2}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI where battle numbers are higher 
+```
+
+```{r extract_coefficients_significance2}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel2}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot2}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by battle fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot2.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot2_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by battle fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot2_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+Weighing by civilian violence fatalities:
+```{r quantile3}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on FDI where civilian violence numbers are higher 
+```
+
+```{r extract_coefficients_significance3}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel3}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot3}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by civilian conflict fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot3.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot3_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by civilian conflict fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot3_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r quantile4}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on FDI where civilian violence numbers are 
+#higher. Maybe this shows the impact of total perceived/reported amount of violence.
+```
+
+```{r extract_coefficients_significance4}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel4}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot4}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by number of violent events recorded by ACLED in the country in the year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot4.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot4_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with FDI as % GDP)", title = "Coefficients vs. Tau", subtitle = "Weighted by number of violent events recorded by ACLED in the country in the year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot4_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+#(2) Incorporating lags/leads on FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's FDI numbers. Therefore we should put a lead() on FDI so that each observation captures passenger and conflict numbers from this year and FDI numbers from NEXT year. 
+
+```{r gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(Foreign.direct.investment.net.inflows.pct.of.GDP)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r quantile5}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel5}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by battle fatalities:
+```{r quantile6}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#next year's FDI, where battle numbers are higher.
+
+summary(qr.model, se = "boot")
+```
+
+```{r extract_coefficients_significance6}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel6}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by civilian violence fatalities:
+```{r quantile7}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on next year's FDI where civilian violence numbers are higher.
+```
+
+```{r extract_coefficients_significance7}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel7}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+Weighing by number of violent events, all types of violent conflict:
+```{r quantile8}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on next year's FDI where civilian violence 
+#numbers are higher. Maybe this reflects the impact of total perceived/reported 
+#amount of violence.
+```
+
+```{r extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel8}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+#(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's 
+passengers on this year's FDI, where last year's violent conflict numbers 
+are higher.
+```{r violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+
+summary(qr.model, se = "boot")
+```
+
+Weighing by battle fatalities:
+```{r quantile9}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+```{r extract_coefficients_significance9}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel9}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by civilian violence fatalities:
+```{r quantile10}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on next year's FDI where civilian violence numbers are higher.
+```
+
+```{r extract_coefficients_significance10}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel10}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r quantile11}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events the previous year (theoretically those picked up by 
+#news outlets in order to be included in ACLED data) on FDI where civilian 
+#violence numbers are higher. Maybe this reflects the impact of total 
+#perceived/reported amount of violence.
+```
+
+```{r extract_coefficients_significance11}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel11}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+#(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on FDI, given that 
+significant battle violence occurred that year.
+```{r filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r quantile12}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel12}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by battle fatalities:
+```{r quantile13}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where battle numbers are higher.
+```
+
+
+```{r extract_coefficients_significance13}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel13}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by civilian violence fatalities:
+```{r quantile14}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on FDI where civilian violence numbers are higher.
+```
+
+
+```{r extract_coefficients_significance14}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel14}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r quantile15}
+qr.model <- rq(Foreign.direct.investment.net.inflows.pct.of.GDP ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on FDI where civilian violence 
+#numbers are higher. Maybe this reflects the impact of total perceived/reported 
+#amount of violence.
+
+summary(qr.model, se = "boot")
+```
+
+```{r extract_coefficients_significance15}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r export-to-excel15}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, file = "exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+#(5) Redoing this entire thing but with total FDI in terms of current $US, not %GDP
+
+(a) Import new dataset, generated by slightly altering the SCM.Rmd file 
+to include ", "GDP (current US$)", "flights_in_change_pct", 
+"passengers_in_change_pct"". Everything should be the same except for there 
+being an FDI column and no 2023 observations (I would have to add data for 
+Ukraine for that to be included, which I will add if I have time).
+```{r new-data}
+data <- read_csv("data/SCM_data2.csv")
+```
+
+Multiply with FDI % to get total FDI column
+```{r gen-total-FDI}
+data <- data %>%
+  mutate(total_FDI_USD = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100) %>%
+  arrange(-total_FDI_USD)
+```
+
+Rerun with total FDI:
+
+
+Log several variables.
+```{r 2log-vars}
+data2 <- data %>%
+  select(Country.Name, year, total_FDI_USD, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict, `GDP.current.US$`)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_civilian_violence_fatalities <- log1p(data2$fatalities.y.Violence.against.civilians)
+data2$ln_events <- log1p(data2$count.events.y.All.types.of.violent.conflict)
+
+#data2$ln_pass <- replace(data2$ln_pass, is.infinite(data2$ln_pass) & data2$ln_pass < 0, 0)
+#data2$ln_battle_fatalities <- replace(data2$ln_battle_fatalities, is.infinite(data2$ln_battle_fatalities) & data2$ln_battle_fatalities < 0, 0)
+#data2$ln_civilian_violence_fatalities <- replace(data2$ln_civilian_violence_fatalities, is.infinite(data2$ln_civilian_violence_fatalities) & data2$ln_civilian_violence_fatalities < 0, 0)
+#data2$ln_events <- replace(data2$ln_events, is.infinite(data2$ln_events) & data2$ln_events < 0, 0)
+```
+
+Basic quantile model: FDI on ln(passengers_in_total)
+```{r 2quantile1}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 2extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Specify the file path where you want to save the Excel file
+file_path <- "exported_tables_total_FDI.xlsx"
+
+# Export the combined data frame to Excel
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
+```
+
+```{r plot5_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot5_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot5}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot5.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+(1): Running the quantile regression with ACLED numbers as a control.
+From the documentation: "The WEIGHT statement specifies a weight variable in the input data set. To request weighted quantile regression, place the weights in a variable. The values of the WEIGHT variable can be nonintegral and are not truncated. Observations with nonpositive or missing values for the weight variable do not contribute to the fit of the model."
+https://support.sas.com/documentation/onlinedoc/stat/142/qreg.pdf 
+
+Weighing by battle fatalities:
+```{r 2quantile2}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI where battle numbers are higher 
+```
+
+```{r 2extract_coefficients_significance2}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel2}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot6_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Weighted by battle fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot6_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+Weighing by civilian violence fatalities:
+```{r 2quantile3}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on FDI where civilian violence numbers are higher 
+```
+
+```{r 2extract_coefficients_significance3}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel3}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot7_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Weighted by civilian conflict fatalities per year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot7_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r 2quantile4}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on FDI where civilian violence numbers are 
+#higher. Maybe this shows the impact of total perceived/reported amount of violence.
+```
+
+```{r 2extract_coefficients_significance4}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel4}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+```{r plot8_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Weighted by number of violent events recorded by ACLED in the country in the year") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot8_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(2) Incorporating lags/leads on FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's FDI numbers. Therefore we should put a lead() on FDI so that each observation captures passenger and conflict numbers from this year and FDI numbers from NEXT year. 
+
+```{r 2gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(total_FDI_USD)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r 2quantile5}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 2extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel5}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by battle fatalities:
+```{r 2quantile6}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#next year's FDI, where battle numbers are higher.
+
+summary(qr.model, se = "boot")
+```
+
+```{r 2extract_coefficients_significance6}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel6}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by civilian violence fatalities:
+```{r 2quantile7}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on next year's FDI where civilian violence numbers are higher.
+```
+
+```{r 2extract_coefficients_significance7}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel7}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+Weighing by number of violent events, all types of violent conflict:
+```{r 2quantile8}
+qr.model <- rq(lead_FDI ~ ln_pass, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on next year's FDI where civilian violence 
+#numbers are higher. Maybe this reflects the impact of total perceived/reported 
+#amount of violence.
+```
+
+```{r 2extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel8}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's 
+passengers on this year's FDI, where last year's violent conflict numbers 
+are higher.
+```{r 2violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+```
+
+Weighing by battle fatalities:
+```{r 2quantile9}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+```{r 2extract_coefficients_significance9}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel9}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by civilian violence fatalities:
+```{r 2quantile10}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on next year's FDI where civilian violence numbers are higher.
+```
+
+```{r 2extract_coefficients_significance10}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel10}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r 2quantile11}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = lag_ln_events)
+
+qr.model[["coefficients"]]
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events the previous year (theoretically those picked up by 
+#news outlets in order to be included in ACLED data) on FDI where civilian 
+#violence numbers are higher. Maybe this reflects the impact of total 
+#perceived/reported amount of violence.
+```
+
+```{r 2extract_coefficients_significance11}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel11}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on FDI, given that 
+significant battle violence occurred that year.
+```{r 2filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r 2quantile12}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r 2extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel12}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by battle fatalities:
+```{r 2quantile13}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_battle_fatalities)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where battle numbers are higher.
+```
+
+
+```{r 2extract_coefficients_significance13}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel13}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by civilian violence fatalities:
+```{r 2quantile14}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_civilian_violence_fatalities)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using civilian violence fatalities as weights, this shows the effects of 
+#passengers on FDI where civilian violence numbers are higher.
+```
+
+
+```{r 2extract_coefficients_significance14}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel14}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+
+Weighing by number of violent events, all types of violent conflict:
+```{r 2quantile15}
+qr.model <- rq(total_FDI_USD ~ ln_pass, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1), 
+               weight = ln_events)
+
+qr.model[["coefficients"]]
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+#By using number of violent events as weights, this shows the effects of the 
+#number of violent events (theoretically those picked up by news outlets in 
+#order to be included in ACLED data) on FDI where civilian violence 
+#numbers are higher. Maybe this reflects the impact of total perceived/reported 
+#amount of violence.
+
+summary(qr.model, se = "boot")
+```
+
+```{r 2extract_coefficients_significance15}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel15}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+#Simplify to just coefficients
+final_df <- final_df %>%
+  select(coefficients)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI.xlsx", overwrite = TRUE)
+
+```
+
+
+
+#(6) Regress with the other variables as a control.
+
+FDI on ln(passengers_in_total) and ln(battle_fatalities)
+```{r 3quantile1}
+qr.model <- rq(total_FDI_USD ~ ln_pass + ln_battle_fatalities, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Specify the file path where you want to save the Excel file
+file_path <- "exported_tables_total_FDI_w_controls.xlsx"
+
+# Export the combined data frame to Excel
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
+```
+
+```{r plot9_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot9_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+FDI on ln(passengers_in_total) and ln(battle_fatalities)
+```{r 3quantile20}
+qr.model <- rq(total_FDI_USD ~ ln_pass + ln_battle_fatalities + `GDP.current.US$`, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance20}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass", "ln_battle_fatalities", "GDP.current.US$")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel20}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI_w_controls.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI_w_controls.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI_w_controls.xlsx", overwrite = TRUE)
+```
+
+```{r plot13_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass", "control", "control2")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control",
+         variable != "control2")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities AND GDP") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot13_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(2) Incorporating lags/leads on FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's FDI numbers. Therefore we should put a lead() on FDI so that each observation captures passenger and conflict numbers from this year and FDI numbers from NEXT year. 
+
+```{r 3gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(total_FDI_USD)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r 3quantile5}
+qr.model <- rq(lead_FDI ~ ln_pass + ln_battle_fatalities, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel5}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI_w_controls.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI_w_controls.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI_w_controls.xlsx", overwrite = TRUE)
+```
+
+```{r plot10_alltaus5}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US, lead by -1)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot10_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's 
+passengers on this year's FDI, where last year's violent conflict numbers 
+are higher.
+```{r 3violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+```
+
+```{r 3quantile8}
+qr.model <- rq(total_FDI_USD ~ ln_pass + lag_ln_battle_fatalities, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+
+```{r 3extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI_w_controls.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI_w_controls.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI_w_controls.xlsx", overwrite = TRUE)
+```
+
+```{r plot11_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by lagged natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot11_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on FDI, given that 
+significant battle violence occurred that year.
+```{r 3filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r 3quantile12}
+qr.model <- rq(total_FDI_USD ~ ln_pass + ln_battle_fatalities, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r 3extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_total_FDI_w_controls.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_total_FDI_w_controls.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_total_FDI_w_controls.xlsx", overwrite = TRUE)
+```
+
+```{r plot12_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Filtered for only countries and years with >100 battle fatalities, controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot12_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+#(7) Regress on passenger pct instead
+
+```{r new-data}
+data <- read_csv("data/SCM_data2.csv")
+```
+
+Log several variables.
+```{r log-vars}
+data2 <- data %>%
+  select(Country.Name, year, Foreign.direct.investment.net.inflows.pct.of.GDP, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict, passengers.in.change.pct, `GDP.current.US$`)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_civilian_violence_fatalities <- log1p(data2$fatalities.y.Violence.against.civilians)
+data2$ln_events <- log1p(data2$count.events.y.All.types.of.violent.conflict)
+
+#data2$ln_pass <- replace(data2$ln_pass, is.infinite(data2$ln_pass) & data2$ln_pass < 0, 0)
+#data2$ln_battle_fatalities <- replace(data2$ln_battle_fatalities, is.infinite(data2$ln_battle_fatalities) & data2$ln_battle_fatalities < 0, 0)
+#data2$ln_civilian_violence_fatalities <- replace(data2$ln_civilian_violence_fatalities, is.infinite(data2$ln_civilian_violence_fatalities) & data2$ln_civilian_violence_fatalities < 0, 0)
+#data2$ln_events <- replace(data2$ln_events, is.infinite(data2$ln_events) & data2$ln_events < 0, 0)
+```
+
+
+Multiply with FDI % to get total FDI column
+```{r gen-total-FDI}
+data2 <- data2 %>%
+  mutate(total_FDI_USD = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100) %>%
+  arrange(-total_FDI_USD)
+```
+
+
+
+Basic quantile model: FDI on passengers.in.change.pct
+```{r 2quantile1}
+qr.model <- rq(total_FDI_USD ~ passengers.in.change.pct, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 2extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Specify the file path where you want to save the Excel file
+file_path <- "exported_tables_pct_changes.xlsx"
+
+# Export the combined data frame to Excel
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
+```
+
+```{r plot14_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot14_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r plot14}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept",
+         tau != 1)
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot14.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+FDI on passengers.in.change.pct and ln(battle_fatalities)
+```{r 3quantile1}
+qr.model <- rq(total_FDI_USD ~ passengers.in.change.pct + ln_battle_fatalities, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot15_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot15_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+FDI on passengers.in.change.pct and ln(battle_fatalities)
+```{r 3quantile20}
+qr.model <- rq(total_FDI_USD ~ passengers.in.change.pct + ln_battle_fatalities + `GDP.current.US$`, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance20}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "ln_battle_fatalities", "GDP.current.US$")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel20}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot16_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "control", "control2")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control",
+         variable != "control2")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities AND GDP") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot16_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(2) Incorporating lags/leads on FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's FDI numbers. Therefore we should put a lead() on FDI so that each observation captures passenger and conflict numbers from this year and FDI numbers from NEXT year. 
+
+```{r 3gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(total_FDI_USD)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r 3quantile5}
+qr.model <- rq(lead_FDI ~ passengers.in.change.pct + ln_battle_fatalities, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel5}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot17_alltaus5}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US, lead by -1)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot17_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's 
+passengers on this year's FDI, where last year's violent conflict numbers 
+are higher.
+```{r 3violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+```
+
+```{r 3quantile8}
+qr.model <- rq(total_FDI_USD ~ passengers.in.change.pct + lag_ln_battle_fatalities, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+
+```{r 3extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot18_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by lagged natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot18_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on FDI, given that 
+significant battle violence occurred that year.
+```{r 3filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r 3quantile12}
+qr.model <- rq(total_FDI_USD ~ passengers.in.change.pct + ln_battle_fatalities, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r 3extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot19_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Filtered for only countries and years with >100 battle fatalities, controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot19_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+#(8) Regress on ln(passengers pct) instead
+
+```{r new-data}
+data <- read_csv("data/SCM_data2.csv")
+```
+
+Log several variables.
+```{r log-vars}
+data2 <- data %>%
+  select(Country.Name, year, Foreign.direct.investment.net.inflows.pct.of.GDP, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict, passengers.in.change.pct, flights.in.change.pct, `GDP.current.US$`)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_civilian_violence_fatalities <- log1p(data2$fatalities.y.Violence.against.civilians)
+data2$ln_events <- log1p(data2$count.events.y.All.types.of.violent.conflict)
+data2$ln_passengers_pct <- log1p(data2$passengers.in.change.pct)
+
+#data2$ln_pass <- replace(data2$ln_pass, is.infinite(data2$ln_pass) & data2$ln_pass < 0, 0)
+#data2$ln_battle_fatalities <- replace(data2$ln_battle_fatalities, is.infinite(data2$ln_battle_fatalities) & data2$ln_battle_fatalities < 0, 0)
+#data2$ln_civilian_violence_fatalities <- replace(data2$ln_civilian_violence_fatalities, is.infinite(data2$ln_civilian_violence_fatalities) & data2$ln_civilian_violence_fatalities < 0, 0)
+#data2$ln_events <- replace(data2$ln_events, is.infinite(data2$ln_events) & data2$ln_events < 0, 0)
+```
+
+
+
+Multiply with FDI % to get total FDI column
+```{r gen-total-FDI}
+data2 <- data2 %>%
+  mutate(total_FDI_USD = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100) %>%
+  arrange(-total_FDI_USD)
+```
+
+
+
+Basic quantile model: FDI on ln_passengers_pct
+```{r 2quantile1}
+qr.model <- rq(total_FDI_USD ~ ln_passengers_pct, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 2extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot20_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot20_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+FDI on ln_passengers_pct and ln(battle_fatalities)
+```{r 3quantile1}
+qr.model <- rq(total_FDI_USD ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot21_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot21_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+FDI on ln_passengers_pct and ln(battle_fatalities)
+```{r 3quantile20}
+qr.model <- rq(total_FDI_USD ~ ln_passengers_pct + ln_battle_fatalities + `GDP.current.US$`, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance20}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities", "GDP.current.US$")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel20}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot22_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control", "control2")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control",
+         variable != "control2")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities AND GDP") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot22_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(2) Incorporating lags/leads on FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's FDI numbers. Therefore we should put a lead() on FDI so that each observation captures passenger and conflict numbers from this year and FDI numbers from NEXT year. 
+
+```{r 3gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(total_FDI_USD)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r 3quantile5}
+qr.model <- rq(lead_FDI ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel5}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot23_alltaus5}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US, lead by -1)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot23_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's 
+passengers on this year's FDI, where last year's violent conflict numbers 
+are higher.
+```{r 3violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+```
+
+```{r 3quantile8}
+qr.model <- rq(total_FDI_USD ~ ln_passengers_pct + lag_ln_battle_fatalities, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+
+```{r 3extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot24_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by lagged natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot24_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on FDI, given that 
+significant battle violence occurred that year.
+```{r 3filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r 3quantile12}
+qr.model <- rq(total_FDI_USD ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r 3extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot25_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with total FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Filtered for only countries and years with >100 battle fatalities, controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot25_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+#(9) Regress on ln(passengers pct) AND percent change in FDI
+
+```{r new-data}
+data <- read_csv("data/SCM_data2.csv")
+```
+
+Log several variables.
+```{r log-vars}
+data2 <- data %>%
+  select(Country.Name, year, Foreign.direct.investment.net.inflows.pct.of.GDP, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict, passengers.in.change.pct, flights.in.change.pct, `GDP.current.US$`)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_civilian_violence_fatalities <- log1p(data2$fatalities.y.Violence.against.civilians)
+data2$ln_events <- log1p(data2$count.events.y.All.types.of.violent.conflict)
+data2$ln_passengers_pct <- log1p(data2$passengers.in.change.pct)
+```
+
+Multiply with FDI % to get total FDI column
+```{r gen-total-FDI}
+data2 <- data2 %>%
+  mutate(total_FDI_USD = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100) %>%
+  arrange(-total_FDI_USD)
+```
+
+Calculate percent change in total FDI from the previous year
+```{r gen-total-FDI}
+data2 <- data2 %>%
+  arrange(Country.Name, year) %>%
+  group_by(Country.Name) %>%
+  mutate(percent_change_FDI = (total_FDI_USD - lag(total_FDI_USD)) / lag(total_FDI_USD) * 100)
+```
+
+
+
+
+Basic quantile model: percent change in total FDI on ln_passengers_pct
+```{r 2quantile1}
+qr.model <- rq(percent_change_FDI ~ ln_passengers_pct, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 2extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 2export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot26_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot26_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+FDI on ln_passengers_pct and ln(battle_fatalities)
+```{r 3quantile1}
+qr.model <- rq(percent_change_FDI ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance1}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot27_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot27_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+FDI on ln_passengers_pct and ln(battle_fatalities)
+```{r 3quantile20}
+qr.model <- rq(percent_change_FDI ~ ln_passengers_pct + ln_battle_fatalities + `GDP.current.US$`, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance20}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities", "GDP.current.US$")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel20}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot28_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control", "control2")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control",
+         variable != "control2")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities AND GDP") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot28_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(2) Incorporating lags/leads on percent change in total FDI
+We should be regressing THIS year's passenger and conflict numbers on NEXT year's percent change in total FDI numbers. Therefore we should put a lead() on percent change in total FDI so that each observation captures passenger and conflict numbers from this year and percent change in total FDI numbers from NEXT year. 
+
+```{r 3gen-lags}
+data3 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lead_FDI = lead(percent_change_FDI)) %>%
+  filter(year < 2023)
+```
+
+No weights:
+```{r 3quantile5}
+qr.model <- rq(lead_FDI ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data3, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r 3extract_coefficients_significance5}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel5}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot29_alltaus5}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI, lead by -1)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot29_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+(3) Lagging violence variables
+
+Add a lag(violence) variable, so that we can test the effect of this year's change in
+passengers on this year's percent change in total FDI, where last year's violent conflict numbers 
+are higher.
+```{r 3violence-lags}
+data4 <- data2 %>%
+  group_by(Country.Name) %>%
+  arrange(year) %>% 
+  mutate(lag_ln_battle_fatalities = lag(ln_battle_fatalities),
+         lag_ln_civilian_violence_fatalities = lag(ln_civilian_violence_fatalities),
+         lag_ln_events = lag(ln_events)) %>%
+  filter(year > 2010)
+```
+
+```{r 3quantile8}
+qr.model <- rq(percent_change_FDI ~ ln_passengers_pct + lag_ln_battle_fatalities, 
+               data = data4, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+#By using battle fatalities as weights, this shows the effects of passengers on 
+#FDI, where last year's battle numbers are higher.
+```
+
+
+```{r 3extract_coefficients_significance8}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot30_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI)", title = "Coefficients vs. Tau", subtitle = "Controlled by lagged natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot30_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+(4) Running the original regression with no weights, but removing countries with 
+less than >100 battle deaths
+
+Let's adjust data to remove COUNTRY+YEAR OBSERVATIONS without enough violence. 
+(>100 battle deaths). We can't just remove all countries with a year or two of 
+insufficent violence, since we would then have practically no observations left 
+(just Pakistan and a handful of other countries). It is enough to see what is 
+the within-country and within-year effect of passenger_total on percent change in total FDI, given that 
+significant battle violence occurred that year.
+```{r 3filter-violent}
+data5 <- data4 %>%
+  filter(fatalities.y.Battles > 100)
+```
+
+No weights:
+```{r 3quantile12}
+qr.model <- rq(percent_change_FDI ~ ln_passengers_pct + ln_battle_fatalities, 
+               data = data5, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+
+#Effects of passengers on percent change in total FDI within a year/country, given that battle 
+#fatalities in that country were higher than 100 in that year.
+```
+
+```{r 3extract_coefficients_significance12}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_passengers_pct", "lag_ln_battle_fatalities")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r 3export-to-excel8}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Add the additional note about sample population being >100 battle fatalities
+note <- "Filter: Countries with >100 battle fatalities in a year"
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Filter", coefficients = note))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("exported_tables_pct_changes.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("exported_tables_pct_changes.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "exported_tables_pct_changes.xlsx", overwrite = TRUE)
+```
+
+```{r plot31_alltaus8}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_passengers_pct", "control")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "control")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (log+1 of percent change in passengers flying into a country from the previous year)", y = "Coefficients (relationship with percent change in total FDI)", title = "Coefficients vs. Tau", subtitle = "Filtered for only countries and years with >100 battle fatalities, controlled by natural log of battle fatalities") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("plot31_alltaus.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+
+
+
+
+
+
+
+(10) Regressing on passenger_spike
+
+(11) Get GDP numbers from Ukraine IMF report
+Convert using exchange rates 

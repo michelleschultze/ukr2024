@@ -1,0 +1,603 @@
+---
+title: 'Data Tidying'
+author: "Michelle Schultze"
+date: "2024-02-02"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+
+#ACLED <- read_csv("data/ACLED index/ACLED_master.csv")
+```
+
+Bring in ACLED index data. (Takes 2 mins)
+```{r ACLED-merge}
+# merge ACLED sets together (had to be downloaded in segments)
+ACLED1 <- read_csv("data/ACLED index/1997-01-01-2001-01-01.csv")
+ACLED2 <- read_csv("data/ACLED index/2001-01-01-2011-01-01.csv")
+ACLED3 <- read_csv("data/ACLED index/2011-01-01-2017-01-01.csv")
+ACLED4 <- read_csv("data/ACLED index/2017-01-01-2018-01-01.csv")
+ACLED5 <- read_csv("data/ACLED index/2018-01-01-2019-01-01.csv")
+ACLED6 <- read_csv("data/ACLED index/2019-01-01-2021-01-01.csv")
+ACLED7 <- read_csv("data/ACLED index/2021-01-01-2023-01-01.csv")
+ACLED8 <- read_csv("data/ACLED index/2023-01-01-2024-01-01.csv")
+ACLED <- full_join(ACLED1, full_join(ACLED2, full_join(ACLED3, full_join(ACLED4, full_join(ACLED5, full_join(ACLED6, full_join(ACLED7, ACLED8)))))))
+
+#Check to make sure all observations are unique in the merged set
+group_by(ACLED, event_id_cnty) %>%
+  summarize(n_id = n()) %>%
+  arrange(descending = TRUE)
+# true — no repeats
+
+write.csv(ACLED, "data/ACLED index/ACLED_master.csv")
+```
+
+Pivot other sets into usable format.
+```{r pivot-econ-sets}
+WB_businesses <- read.csv("data/WB_businesses.csv")
+WB_businesses <- pivot_longer(data = WB_businesses, cols = 5:67, names_to = "year")
+WB_businesses$year <- gsub("^.{0,1}", "", WB_businesses$year)
+
+WB_economic_indicators <- read_excel("data/WB_economic_indicators.xlsx", .name_repair = "universal") 
+WB_economic_indicators <- pivot_longer(data = WB_economic_indicators, cols = 5:67, names_to = "year")
+WB_economic_indicators$year <- gsub("^.{0,3}", "", WB_economic_indicators$year)
+WB_economic_indicators <- WB_economic_indicators %>%
+  mutate(value = as.numeric(value))
+
+WB_airports <- read.csv("data/airport_volume_airport_locations_WB.csv") %>%
+  mutate(year = 2023)
+```
+
+Merge into a comprehensive country/year dataset.
+```{r merge-econ-sets}
+WB_economic_indicators <- WB_economic_indicators %>%
+  mutate(Indicator.Name = Series.Name, Indicator.Code = Series.Code) %>%
+  select(-Series.Name, -Series.Code) %>%
+  relocate(year, .after = last_col()) %>%
+  relocate(value, .after = last_col())
+
+bigset <- full_join(WB_economic_indicators, WB_businesses)
+
+#checking to make sure it added the variable
+bigset %>%
+  filter(Indicator.Name == "New businesses registered (number)")
+#we're good
+
+WB_airports2 <- WB_airports %>%
+  group_by(Country.Name) %>%
+  summarize(AirportsCount = n(),
+            AirportsVolume = sum(TotalSeats),
+            year = mean(year)) 
+
+#testing to make sure the variables work and are sortable
+WB_airports2 %>%
+  arrange(AirportsVolume) 
+#great
+
+WB_airports3 <- pivot_longer(data = WB_airports2, cols = 2:3, names_to = "Indicator.Name") 
+bigset <- bigset %>%
+  mutate(year = as.numeric(year))
+bigset <- full_join(bigset, WB_airports3)
+
+#checking to make sure it added the variable
+bigset %>%
+  filter(Indicator.Name == "AirportsVolume")
+#we're good
+```
+
+Aggregate and merge ACLED indicators
+```{r ACLED-tidy}
+ACLED2 <- ACLED %>%
+  mutate(event_date = as.Date(ACLED$event_date, "%d %B %Y"))
+
+ACLED_day <- ACLED2 %>%
+  group_by(event_date, country) %>%
+  count()
+
+#aggregating by month and year
+ACLED_month_total <- ACLED2 %>%
+    group_by(month = lubridate::floor_date(event_date, 'month'),
+             country) %>%
+    summarize(fatalities_m = sum(fatalities),
+              count_events_m = n()) %>%
+  mutate(type = "All types of violent conflict")
+
+ACLED_year_total <- ACLED_month_total %>%
+    group_by(year = lubridate::floor_date(month, 'year'),
+             country) %>%
+    summarize(fatalities_y = sum(fatalities_m),
+              count_events_y = sum(count_events_m))  %>%
+  mutate(type = "All types of violent conflict")
+
+#aggregating by type of conflict as well, adding to set
+ACLED_month_types <- ACLED2 %>%
+    group_by(month = lubridate::floor_date(event_date, 'month'),
+             country, event_type) %>%
+    summarize(fatalities_m = sum(fatalities),
+              count_events_m = n(),
+              type = event_type[1]) %>%
+  select(-event_type)
+
+ACLED_month <- full_join(ACLED_month_total, ACLED_month_types)
+
+ACLED_year_types <- ACLED2 %>%
+    group_by(year = lubridate::floor_date(event_date, 'year'),
+             country, event_type) %>%
+    summarize(fatalities_y = sum(fatalities),
+              count_events_y = n(),
+              type = event_type[1]) %>%
+  select(-event_type)
+
+ACLED_year <- full_join(ACLED_year_total, ACLED_year_types)
+
+#prep to merge year-aggregated set with bigset 
+#transform dates to readable/mergeable form
+ACLED_month <- ACLED_month %>%
+  mutate(month = format(month, "%b %Y"))
+
+ACLED_year <- ACLED_year %>%
+  mutate(year = format(year, "%Y"))
+
+#pivot to long format and rename vars
+ACLED_year <- ACLED_year %>% 
+  pivot_longer(cols = 3:4, names_to = "Indicator.Name", values_to = "value") %>%
+  mutate(Country.Name = country,
+         Indicator.Name = paste0(Indicator.Name, ", ", type)) %>%
+  select(-type, -country)
+
+ACLED_month <- ACLED_month %>% 
+  pivot_longer(cols = 3:4, names_to = "Indicator.Name", values_to = "value") %>%
+  mutate(Country.Name = country,
+         Indicator.Name = paste0(Indicator.Name, ", ", type)) %>%
+  select(-type, -country)
+
+#merge yearly set with bigset
+bigset <- bigset %>% 
+  mutate(year = as.character(year)) %>%
+  full_join(ACLED_year)
+
+#check merge
+bigset %>%
+  filter(Indicator.Name == "count_events_y, Protests")
+#good
+```
+
+Isolate spellings that don't match
+```{r spellings}
+bigset %>%
+  group_by(Country.Name) %>%
+  summarize(Count = n()) %>%
+  filter(Count < 100) %>%
+  print(n = 50)
+
+#search df
+bigset %>%
+  filter(grepl('tristan', Country.Name))
+
+bigset <- bigset %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Russia" ~ "Russian Federation",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha")))
+# "grenada and south grenadines" overlap between country observations -- drop to be safe
+# WB does not recognize Taiwan unfortunately
+
+bigset %>%
+  group_by(Country.Name) %>%
+  summarize(Count = n()) %>%
+  filter(Count < 150) %>%
+  print(n = 50)
+#Remainder are very small and isolated territories of other countries or unrecognized by WB as countries -- better to keep as their own entries
+#Keep consistent labels for ease of adding other data if needed
+```
+
+Save our tidied datasets for further use
+```{r writecsvs}
+write.csv(bigset, "data/master_dataset.csv")
+write.csv(ACLED_month, "data/ACLED_month.csv")
+```
+
+Merge flight data 
+(Downloaded from https://www.bts.gov/browse-statistical-products-and-data/bts-
+publications/data-bank-28im-t-100-and-t-100f-internationa-0)
+```{r merge-flights}
+# Set the working directory to where the data files are located
+setwd("/Users/michelle/Documents/UKR-airports/data/flights/transportation statistics data/multiple years")
+
+# List all .asc files in the directory
+file_list <- list.files(pattern = "\\.asc$")
+
+# Initialize an empty list to store data frames
+data_list <- list()
+
+# Function to handle missing values and remove the first row (header)
+clean_data <- function(data) {
+  # Remove first row (header) and convert it to column names
+  col_names <- data[1, ]
+  data <- data[-1, ]
+  colnames(data) <- col_names
+  
+  # Replace "NA" strings with actual NA values
+  data[data == "NA"] <- NA
+  return(data)
+}
+
+# Loop through each file, read it, clean the data, and append it to the data list
+for (file in file_list) {
+  data <- read.csv(file, header = FALSE, sep = "|", stringsAsFactors = FALSE)
+  data <- clean_data(data)
+  
+  # Only add the dataframe to data_list if it has the expected number of columns (20)
+  if (ncol(data) == 20) {
+    data_list[[file]] <- data
+  } else {
+    cat("Skipping file", file, "due to irregular dimensions.\n")
+  }
+}
+
+# Combine all data frames into one if there are any
+if (length(data_list) > 0) {
+  # Combine all data frames into one
+  full_data <- do.call(rbind, data_list)
+  
+  # Convert numeric columns from character to numeric
+  num_cols <- c("Year", "Month", "Origin_Airport_ID", "Destination_Airport_ID", "Flight_Number", "Scheduled_Departures", "Scheduled_Seats", "Flights_Cancelled", "Flights_Diverted", "Scheduled_Passengers", "Actual_Passengers", "Flights_Departed", "Payload", "Seats", "Freight")
+  full_data[, num_cols] <- lapply(full_data[, num_cols], as.numeric)
+  
+  # Optionally, you can save the merged dataset to a CSV file
+  # write.csv(full_data, "merged_data.csv", row.names = FALSE)
+  
+  # Check the structure of the merged dataset
+  str(full_data)
+} else {
+  cat("No valid data frames found. Check your data files for issues.")
+}
+
+# Adjust num_cols based on the actual column names
+num_cols <- c("year", "month", "origin_wac", "origin_city_market_id", "dest_wac", "dest_city_market_id", "distance", "passengers", "freight", "mail")
+
+# Convert numeric columns from character to numeric
+full_data[, num_cols] <- lapply(full_data[, num_cols], as.numeric)
+
+# Check the structure of the merged dataset
+str(full_data)
+
+
+
+# Adjust num_cols based on the actual column names, excluding the "NA" column
+num_cols <- c("year", "month", "origin_wac", "origin_city_market_id", "dest_wac", "dest_city_market_id", "distance", "passengers", "freight", "mail")
+
+# Remove "NA" from the column names
+full_data <- full_data[, !colnames(full_data) %in% "NA"]
+
+# Convert numeric columns from character to numeric
+full_data[, num_cols] <- lapply(full_data[, num_cols], as.numeric)
+
+# Check the structure of the merged dataset
+str(full_data)
+
+```
+
+Extract country variables from city columns
+```{r country-variables}
+# Function to extract country information
+extract_country <- function(city_name) {
+  # Split the city name by comma
+  parts <- strsplit(city_name, ",")[[1]]
+  
+  # Extract the last part as the country
+  country <- trimws(parts[length(parts)])
+  
+  # Convert state codes to "USA"
+  if (country %in% state_codes) {
+    country <- "USA"
+  }
+  
+  return(country)
+}
+
+# Define a vector of 2-letter state codes
+state_codes <- c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", 
+                 "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", 
+                 "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", 
+                 "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", 
+                 "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", 
+                 "DC", "TT", "PR", "VI")
+
+#Trust territories were administered by the US until this code stopped being used
+
+# Create origin country column
+full_data$origin_country <- sapply(full_data$origin_city_name, extract_country)
+
+# Create destination country column
+full_data$destination_country <- sapply(full_data$dest_city_name, extract_country)
+
+# Display the first few rows of the updated dataset
+head(full_data)
+
+```
+
+Aggregate by country and month
+```{r aggregate-flights}
+x <- full_data %>%
+  group_by(year, month, origin_country, destination_country) %>%
+  summarize(total_passengers = sum(passengers),
+            total_freight = sum(freight),
+            total_mail = sum(mail),
+            total_flights = n())
+
+#testing for irregularities
+x %>% 
+  group_by(origin_country, destination_country, year, month) %>%
+  count() %>%
+  filter(n > 1)
+#Great, no double counting
+
+#making sure trust territories carried over properly
+x %>% 
+  group_by(origin_country, destination_country, year, month) %>%
+  count() %>%
+  filter(origin_country == "Palau" | destination_country == "Palau") %>%
+  arrange(year)
+#yes, these start being recorded in 1994, when it entered in free association with the US
+
+#export
+write.csv(x, "/Users/michelle/Documents/UKR-airports/data/flights_master.csv")
+#x <- read.csv("/Users/michelle/Documents/UKR-airports/data/flights_master.csv")
+```
+
+Reshape flights dataset
+```{r reshape-flights}
+y <- x %>% 
+  mutate(country = case_when(origin_country != "USA" ~ origin_country,
+                             destination_country != "USA" ~ destination_country),
+         in_out = case_when(origin_country != "USA" ~ "out",
+                             destination_country != "USA" ~ "in")) %>%
+  mutate(total_freight_in = case_when(in_out == "out" ~ 0,
+                                       in_out == "in" ~ total_freight),
+         total_freight_out = case_when(in_out == "in" ~ 0,
+                                       in_out == "out" ~ total_freight),
+         total_mail_in = case_when(in_out == "out" ~ 0,
+                                       in_out == "in" ~ total_mail),
+         total_mail_out = case_when(in_out == "in" ~ 0,
+                                       in_out == "out" ~ total_mail),
+         total_passengers_in = case_when(in_out == "out" ~ 0,
+                                       in_out == "in" ~ total_passengers),
+         total_passengers_out = case_when(in_out == "in" ~ 0,
+                                       in_out == "out" ~ total_passengers),
+         total_flights_in = case_when(in_out == "out" ~ 0,
+                                       in_out == "in" ~ total_flights),
+         total_flights_out = case_when(in_out == "in" ~ 0,
+                                       in_out == "out" ~ total_flights)) %>%
+  group_by(country, year, month) %>%
+  summarize(total_freight_in = sum(total_freight_in),
+            total_freight_out = sum(total_freight_out),
+            total_mail_in = sum(total_mail_in),
+            total_mail_out = sum(total_mail_out),
+            total_passengers_in = sum(total_passengers_in),
+            total_passengers_out = sum(total_passengers_out),
+            total_flights_in = sum(total_flights_in),
+            total_flights_out = sum(total_flights_out))
+#"in" describes into the country of interest, not into the US
+```
+
+Complete all rows in the dataset not included (nulls)
+```{r complete-flights}
+library(tidyr)
+
+# Convert factor columns to character or numeric
+y$country <- as.character(y$country)
+y$year <- as.numeric(y$year)
+y$month <- as.numeric(y$month)
+
+# Create a data frame with all combinations of country, year, and month
+all_combinations <- expand.grid(
+  country = unique(y$country),
+  year = unique(y$year),
+  month = unique(y$month)
+)
+
+# Merge or join all_combinations with your original data
+complete_data <- merge(all_combinations, y, by = c("country", "year", "month"), all.x = TRUE)
+
+# Fill missing values with 0
+complete_data[is.na(complete_data)] <- 0
+
+#Check to make sure it loaded properly
+complete_data %>%
+  filter(total_freight_in != 0 &
+         total_freight_out != 0 &
+         total_mail_in != 0 &
+         total_mail_out != 0 &
+         total_passengers_in != 0 &
+         total_passengers_out != 0 &
+         total_flights_in != 0 &
+         total_flights_out != 0) %>%
+  group_by(country) %>%
+  count() %>%
+  arrange(-n)
+
+y %>%
+  filter(total_freight_in != 0 &
+         total_freight_out != 0 &
+         total_mail_in != 0 &
+         total_mail_out != 0 &
+         total_passengers_in != 0 &
+         total_passengers_out != 0 &
+         total_flights_in != 0 &
+         total_flights_out != 0) %>%
+  group_by(country) %>%
+  count() %>%
+  arrange(-n)
+
+#They're the same. Success :)
+
+y <- complete_data
+```
+
+Generate "change in" variables
+```{r change-flights}
+# Group by country and year, then calculate the percentage change
+y_changes <- y %>%
+  arrange(country, year) %>%
+  group_by(country) %>%
+  mutate(
+    flights_in_change_pct = ifelse(lag(total_flights_in) != 0, ((total_flights_in - lag(total_flights_in)) / lag(total_flights_in)) * 100, NA),
+    passengers_in_change_pct = ifelse(lag(total_passengers_in) != 0, ((total_passengers_in - lag(total_passengers_in)) / lag(total_passengers_in)) * 100, NA),
+    mail_in_change_pct = ifelse(lag(total_mail_in) != 0, ((total_mail_in - lag(total_mail_in)) / lag(total_mail_in)) * 100, NA),
+    freight_in_change_pct = ifelse(lag(total_freight_in) != 0, ((total_freight_in - lag(total_freight_in)) / lag(total_freight_in)) * 100, NA),
+    flights_out_change_pct = ifelse(lag(total_flights_out) != 0, ((total_flights_out - lag(total_flights_out)) / lag(total_flights_out)) * 100, NA),
+    passengers_out_change_pct = ifelse(lag(total_passengers_out) != 0, ((total_passengers_out - lag(total_passengers_out)) / lag(total_passengers_out)) * 100, NA),
+    mail_out_change_pct = ifelse(lag(total_mail_out) != 0, ((total_mail_out - lag(total_mail_out)) / lag(total_mail_out)) * 100, NA),
+    freight_out_change_pct = ifelse(lag(total_freight_out) != 0, ((total_freight_out - lag(total_freight_out)) / lag(total_freight_out)) * 100, NA)
+  ) %>%
+  mutate(
+    flights_in_change_pct = ifelse(is.na(flights_in_change_pct), 0, flights_in_change_pct),
+    passengers_in_change_pct = ifelse(is.na(passengers_in_change_pct), 0, passengers_in_change_pct),
+    mail_in_change_pct = ifelse(is.na(mail_in_change_pct), 0, mail_in_change_pct),
+    freight_in_change_pct = ifelse(is.na(freight_in_change_pct), 0, freight_in_change_pct),
+    flights_out_change_pct = ifelse(is.na(flights_out_change_pct), 0, flights_out_change_pct),
+    passengers_out_change_pct = ifelse(is.na(passengers_out_change_pct), 0, passengers_out_change_pct),
+    mail_out_change_pct = ifelse(is.na(mail_out_change_pct), 0, mail_out_change_pct),
+    freight_out_change_pct = ifelse(is.na(freight_out_change_pct), 0, freight_out_change_pct)
+  ) 
+
+```
+
+Regenerate flight data in aggregated per-year form
+```{r year-flights}
+# Group by country and year, then calculate the percentage change
+z <- y %>%
+  pivot_longer(cols = 4:11, names_to = "Indicator.Name") 
+
+z <- z %>%
+    group_by(country, year, Indicator.Name) %>%
+    summarize(value = sum(value)) 
+
+zz <- z %>% 
+  pivot_wider(names_from = Indicator.Name, values_from = value)
+
+#PROB FOR TODAY: fix it above so that you can pivot it after this and don't have to worry about rewriting the code chunk
+z_changes <- zz %>%
+  arrange(country, year) %>%
+  group_by(country) %>%
+  mutate(
+    flights_in_change_pct = ifelse(lag(total_flights_in) != 0, ((total_flights_in - lag(total_flights_in)) / lag(total_flights_in)) * 100, NA),
+    passengers_in_change_pct = ifelse(lag(total_passengers_in) != 0, ((total_passengers_in - lag(total_passengers_in)) / lag(total_passengers_in)) * 100, NA),
+    mail_in_change_pct = ifelse(lag(total_mail_in) != 0, ((total_mail_in - lag(total_mail_in)) / lag(total_mail_in)) * 100, NA),
+    freight_in_change_pct = ifelse(lag(total_freight_in) != 0, ((total_freight_in - lag(total_freight_in)) / lag(total_freight_in)) * 100, NA),
+    flights_out_change_pct = ifelse(lag(total_flights_out) != 0, ((total_flights_out - lag(total_flights_out)) / lag(total_flights_out)) * 100, NA),
+    passengers_out_change_pct = ifelse(lag(total_passengers_out) != 0, ((total_passengers_out - lag(total_passengers_out)) / lag(total_passengers_out)) * 100, NA),
+    mail_out_change_pct = ifelse(lag(total_mail_out) != 0, ((total_mail_out - lag(total_mail_out)) / lag(total_mail_out)) * 100, NA),
+    freight_out_change_pct = ifelse(lag(total_freight_out) != 0, ((total_freight_out - lag(total_freight_out)) / lag(total_freight_out)) * 100, NA)
+  ) %>%
+  mutate(
+    flights_in_change_pct = ifelse(is.na(flights_in_change_pct), 0, flights_in_change_pct),
+    passengers_in_change_pct = ifelse(is.na(passengers_in_change_pct), 0, passengers_in_change_pct),
+    mail_in_change_pct = ifelse(is.na(mail_in_change_pct), 0, mail_in_change_pct),
+    freight_in_change_pct = ifelse(is.na(freight_in_change_pct), 0, freight_in_change_pct),
+    flights_out_change_pct = ifelse(is.na(flights_out_change_pct), 0, flights_out_change_pct),
+    passengers_out_change_pct = ifelse(is.na(passengers_out_change_pct), 0, passengers_out_change_pct),
+    mail_out_change_pct = ifelse(is.na(mail_out_change_pct), 0, mail_out_change_pct),
+    freight_out_change_pct = ifelse(is.na(freight_out_change_pct), 0, freight_out_change_pct)
+  ) 
+
+z <- z_changes %>%
+  pivot_longer(cols = 3:18, names_to = "Indicator.Name") %>%
+  mutate(Country.Name = country) %>%
+  ungroup() %>%
+  select(-country)
+```
+
+Merge with master dataset
+```{r merge-flights-master}
+master_dataset <- read_csv("data/master_dataset.csv")
+
+alpha <- master_dataset %>%
+  merge(z, by = c("Country.Name", "year", "Indicator.Name", "value"), 
+        all.x = TRUE, all.y = TRUE) 
+
+alpha[, -5]
+
+#export new master set
+write.csv(alpha, "/Users/michelle/Documents/UKR-airports/data/master_dataset.csv")
+```
+
+
+
+Quantile regression
+```{r}
+library(quantreg)
+
+
+
+
+z <- y_changes %>%
+  merge(ACLED, all = TRUE) 
+
+rqfit <- rq(mpg ~ passengers_in_change_pct, data = mtcars)
+rqfit
+summary(rqfit)
+
+plot(mpg ~ wt, data = mtcars, pch = 16, main = "mpg ~ wt")
+abline(lm(mpg ~ wt, data = mtcars), col = "red", lty = 2)
+abline(rq(mpg ~ wt, data = mtcars), col = "blue", lty = 2)
+legend("topright", legend = c("lm", "rq"), col = c("red", "blue"), lty = 2)
+```
+
+
+Generate proportion variables (% passengers going in, % flights going in, etc)
+```{r}
+#tba
+```
+
+
+Sources:
+In the interest of saving time, some of the importing/tidying/merging code was
+generated by ChatGPT and modified to fit the needs of this project. The 
+remainder was coded by hand, referencing Stack Overflow and other online forums.
