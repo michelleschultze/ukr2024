@@ -11,3 +11,943 @@ output:
 ---
 ---
 
+##Data prep
+
+Load in packages.
+```{r packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+library("readr")
+library("microsynth")
+library("LowRankQP")
+#install.packages("quantreg")
+library(quantreg)
+#install.packages("openxlsx")
+library(openxlsx)
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data.csv")
+```
+
+Log several variables.
+```{r log-vars}
+data <- data %>%
+  mutate(total_FDI_USD = Foreign.direct.investment.net.inflows.pct.of.GDP * `GDP.current.US$` / 100) %>%
+  arrange(-total_FDI_USD)
+
+data2 <- data %>%
+  select(Country.Name, year, Foreign.direct.investment.net.inflows.pct.of.GDP, fatalities.y.Battles, fatalities.y.Violence.against.civilians, total.passengers.in, count.events.y.All.types.of.violent.conflict, log_FDI_n, log_GDP_r, passengers.in.change.pct)
+
+data2$ln_pass <- log1p(data2$total.passengers.in)
+data2$ln_battle_fatalities <- log1p(data2$fatalities.y.Battles)
+data2$ln_pass_pct <- log1p(data2$passengers.in.change.pct / 100)
+
+#data2$ln_pass <- replace(data2$ln_pass, is.infinite(data2$ln_pass) & data2$ln_pass < 0, 0)
+#data2$ln_battle_fatalities <- replace(data2$ln_battle_fatalities, is.infinite(data2$ln_battle_fatalities) & data2$ln_battle_fatalities < 0, 0)
+#data2$ln_civilian_violence_fatalities <- replace(data2$ln_civilian_violence_fatalities, is.infinite(data2$ln_civilian_violence_fatalities) & data2$ln_civilian_violence_fatalities < 0, 0)
+#data2$ln_events <- replace(data2$ln_events, is.infinite(data2$ln_events) & data2$ln_events < 0, 0)
+```
+
+```{r specify-function}
+# Create a function to extract coefficients with stars
+extract_coefficients <- function(summary_output) {
+  # Initialize an empty vector to store coefficients
+  coef_vector <- character()
+  
+  # Loop through each set of coefficients
+  for (i in 1:length(summary_output)) {
+    # Extract coefficients and p-values
+    coefficients <- summary_output[[i]]$coefficients[, 1]
+    p_values <- summary_output[[i]]$coefficients[, 4]
+    
+    # Compute stars based on p-values
+    stars <- ifelse(p_values < 0.001, "***",
+                    ifelse(p_values < 0.01, "**",
+                           ifelse(p_values < 0.05, "*",
+                                  ifelse(p_values < 0.1, ".", ""))))
+    
+    # Combine coefficients with stars
+    coef_with_stars <- paste0(signif(coefficients, digits = 4), stars)
+    
+    # Append to the coef_vector
+    coef_vector <- c(coef_vector, coef_with_stars)
+  }
+  
+  return(coef_vector)
+}
+
+# Create a function to extract coefficients withOUT stars
+extract_coefficients_nostars <- function(summary_output) {
+  # Initialize an empty vector to store coefficients
+  coef_vector <- character()
+  
+  # Loop through each set of coefficients
+  for (i in 1:length(summary_output)) {
+    # Extract coefficients and p-values
+    coefficients <- summary_output[[i]]$coefficients[, 1]
+    p_values <- summary_output[[i]]$coefficients[, 4]
+    
+    # Combine coefficients with stars
+    coef_without_stars <- paste0(signif(coefficients, digits = 4))
+    
+    # Append to the coef_vector
+    coef_vector <- c(coef_vector, coef_without_stars)
+  }
+  
+  return(coef_vector)
+}
+```
+
+##Decile Regression 1
+Decile OLS regression of logged total FDI on logged QUANTITY of passengers flying into a country on US carriers
+
+Log+1 total FDI on log+1 total passengers flying into the country (ln_pass).
+```{r A_quantile}
+qr.model <- rq(log_FDI_n ~ ln_pass, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r A_extract_coefficients_significance}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r A_export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Specify the file path where you want to save the Excel file
+file_path <- "Decile Analysis/Coefficient Tables/exported_tables.xlsx"
+
+# Export the combined data frame to Excel
+write.xlsx(final_df, file = file_path, rowNames = FALSE)
+```
+
+```{r A_plot_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "ln_pass")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (natural log of passengers flying in on US carriers)", y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("Decile Analysis/Plots/decile_plotA.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r A_cutoffs}
+# Calculate the quantiles for ln_pass
+passenger_cutoffs <- quantile(data2$ln_pass, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on natural log of passengers flying into the country (ln_pass)."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Create a new workbook
+new_wb <- createWorkbook()
+
+# Add a worksheet for Tau cutoffs
+addWorksheet(new_wb, "Tau_Cutoffs")
+
+# Write the data to the new sheet
+writeData(new_wb, sheet = "Tau_Cutoffs", cutoff_df)
+
+# Write the model note at the bottom
+writeData(new_wb, sheet = "Tau_Cutoffs", model_note, startRow = nrow(cutoff_df) + 2, colNames = FALSE)
+
+# Save the new workbook
+saveWorkbook(new_wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+
+
+##Decile Regression 2
+Decile OLS regression of logged total FDI on PERCENTAGE INCREASE of passengers flying into a country on US carriers
+
+Log+1 total FDI on percent change in passengers flying into the country (passengers.in.change.pct), with country fixed effects.
+```{r B_quantile}
+qr.model <- rq(log_FDI_n ~ passengers.in.change.pct + factor(Country.Name), 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r B_extract_coefficients_significance}
+# Extract the summary from the quantile regression model
+summary_output <- summary(qr.model, se = "boot")
+
+# Extract the coefficients with significance stars
+coefficients_with_stars <- extract_coefficients(summary_output)
+
+# Print the coefficients with stars to check
+print(coefficients_with_stars)
+
+# Define the coefficient names and tau levels
+coef_names <- c("Intercept", "passengers_in_change_pct")  # Only relevant coefficients
+tau_levels <- seq(0.1, 1, by = 0.1)
+
+# Create a data frame to hold tau levels and variable names
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+coef_with_tau <- coef_with_tau %>% arrange(as.numeric(tau))
+
+# Filter out the country fixed effects (keeping only Intercept and passengers_in_change_pct)
+# Adjust the number of coefficients to exclude the fixed effects
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_with_stars[1:(num_tau_levels * num_coefficients)]
+
+# Combine the filtered coefficients with the tau information
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Print to verify
+print(coef_with_tau)
+```
+
+```{r B_export-to-excel}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame (without fixed effects) with the additional information
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Read the data from the first sheet to determine the starting column
+sheet_data <- read.xlsx("Decile Analysis/Coefficient Tables/exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data (coefficients and additional info) to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/exported_tables.xlsx", overwrite = TRUE)
+```
+
+```{r B_plot_alltaus}
+# Extract coefficients without stars from the summary output
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+# Filter out the country fixed effects
+# Keep only Intercept and passengers_in_change_pct coefficients
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_without_stars[1:(num_tau_levels * num_coefficients)]
+
+# Create a dataframe with tau and variable combinations
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+# Arrange by tau for plotting
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients without stars and tau information (only for relevant variables)
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Filter out intercept if you want to plot only the variable of interest
+coef_with_tau <- coef_with_tau %>%
+  filter(variable == "passengers_in_change_pct")
+
+# Load necessary libraries for plotting
+library(ggplot2)
+
+# Plot coefficients against tau
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (Percent change in passengers flying into the country)", 
+       y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", 
+       title = "Coefficients vs. Tau",
+       subtitle = "With Country Fixed Effects") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+# Save the plot as a .jpg file
+ggsave("Decile Analysis/Plots/decile_plotB.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r B_cutoffs}
+# Calculate the quantiles for passenger percentage changes
+passenger_cutoffs <- quantile(data2$passengers.in.change.pct, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on percentage change in passengers flying into the country (passengers.in.change.pct), with country fixed effects."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Load the existing workbook for Tau cutoffs
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx")
+
+# Determine the next available row to insert data
+existing_data <- read.xlsx("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", sheet = "Tau_Cutoffs")
+start_row <- nrow(existing_data) + 3  # Two empty lines before data
+
+# Write the cutoff data to the existing sheet with two empty lines before
+writeData(wb, sheet = "Tau_Cutoffs", cutoff_df, startRow = start_row, colNames = TRUE)
+
+# Write the model note at the next row
+writeData(wb, sheet = "Tau_Cutoffs", model_note, startRow = start_row + nrow(cutoff_df) + 1, colNames = FALSE)
+
+# Save the updated workbook
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+
+
+##Decile Regression 3
+
+
+Log+1 total FDI on log+1 total passengers flying in, with country fixed effects.
+```{r C_quantile}
+qr.model <- rq(log_FDI_n ~ ln_pass + factor(Country.Name), 
+               data = data2, tau = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1))
+
+qr.model[["coefficients"]]
+```
+
+```{r C_extract_coefficients_significance}
+# Extract the summary from the quantile regression model
+summary_output <- summary(qr.model, se = "boot")
+
+# Extract the coefficients with significance stars
+coefficients_with_stars <- extract_coefficients(summary_output)
+
+# Print the coefficients with stars to check
+print(coefficients_with_stars)
+
+# Define the coefficient names and tau levels
+coef_names <- c("Intercept", "ln_pass")  # Only relevant coefficients
+tau_levels <- seq(0.1, 1, by = 0.1)
+
+# Create a data frame to hold tau levels and variable names
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+coef_with_tau <- coef_with_tau %>% arrange(as.numeric(tau))
+
+# Filter out the country fixed effects (keeping only Intercept and ln_pass)
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_with_stars[1:(num_tau_levels * num_coefficients)]
+
+# Combine the filtered coefficients with the tau information
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Print to verify
+print(coef_with_tau)
+```
+
+```{r C_export-to-excel}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame (without fixed effects) with the additional information
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Read the data from the first sheet to determine the starting column
+sheet_data <- read.xlsx("Decile Analysis/Coefficient Tables/exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data (coefficients and additional info) to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r C_plot_alltaus}
+# Extract coefficients without stars from the summary output
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+# Filter out the country fixed effects
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_without_stars[1:(num_tau_levels * num_coefficients)]
+
+# Create a dataframe with tau and variable combinations
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+# Arrange by tau for plotting
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients without stars and tau information (only for relevant variables)
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Filter out intercept if you want to plot only the variable of interest
+coef_with_tau <- coef_with_tau %>%
+  filter(variable == "ln_pass")
+
+# Load necessary libraries for plotting
+library(ggplot2)
+
+# Plot coefficients against tau
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (Logged Total Passengers)", 
+       y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", 
+       title = "Coefficients vs. Tau",
+       subtitle = "With Country Fixed Effects") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+# Save the plot as a .jpg file
+ggsave("Decile Analysis/Plots/decile_plotC.jpg", width = 10, height = 5, units = "in", dpi = 300)
+
+```
+
+```{r C_cutoffs}
+# Calculate the quantiles for logged total passengers
+passenger_cutoffs <- quantile(data2$ln_pass, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on logged total passengers (ln_pass), with country fixed effects."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Load the existing workbook for Tau cutoffs
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx")
+
+# Determine the next available row to insert data
+existing_data <- read.xlsx("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", sheet = "Tau_Cutoffs")
+start_row <- nrow(existing_data) + 3  # Two empty lines before data
+
+# Write the cutoff data to the existing sheet with two empty lines before
+writeData(wb, sheet = "Tau_Cutoffs", cutoff_df, startRow = start_row, colNames = TRUE)
+
+# Write the model note at the next row
+writeData(wb, sheet = "Tau_Cutoffs", model_note, startRow = start_row + nrow(cutoff_df) + 1, colNames = FALSE)
+
+# Save the updated workbook
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+
+
+
+##Decile Regression 4
+Decile OLS regression of total FDI on PERCENTAGE INCREASE of passengers flying into a country on US carriers CONTROLLED by GDP and battle fatalities
+
+```{r D_quantile}
+qr.model <- rq(log_FDI_n ~ passengers.in.change.pct + ln_battle_fatalities + log_GDP_r, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r D_extract_coefficients_significance}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct", "ln_battle_fatalities", "log_GDP_r")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r D_export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("Decile Analysis/Coefficient Tables/exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/exported_tables.xlsx", overwrite = TRUE)
+```
+
+```{r D_plot_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct", "ln_battle_fatalities", "log_GDP_r")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept", 
+         variable != "ln_battle_fatalities",
+         variable != "log_GDP_r")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into the country)", y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", title = "Coefficients vs. Tau", subtitle = "Controlled by natural log of battle fatalities AND GDP") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("Decile Analysis/Plots/decile_plotD.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r D_cutoffs}
+# Calculate the quantiles for logged total passengers
+passenger_cutoffs <- quantile(data2$passengers.in.change.pct, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on passengers in change pct, controlled by ln battle fatalities and log real GDP."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Load the existing workbook for Tau cutoffs
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx")
+
+# Determine the next available row to insert data
+existing_data <- read.xlsx("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", sheet = "Tau_Cutoffs")
+start_row <- nrow(existing_data) + 3  # Two empty lines before data
+
+# Write the cutoff data to the existing sheet with two empty lines before
+writeData(wb, sheet = "Tau_Cutoffs", cutoff_df, startRow = start_row, colNames = TRUE)
+
+# Write the model note at the next row
+writeData(wb, sheet = "Tau_Cutoffs", model_note, startRow = start_row + nrow(cutoff_df) + 1, colNames = FALSE)
+
+# Save the updated workbook
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+
+
+
+##Decile Regression 5 (same as 4 but with country fixed effects)
+
+```{r E_quantile}
+qr.model <- rq(log_FDI_n ~ passengers.in.change.pct + ln_battle_fatalities + log_GDP_r + factor(Country.Name), 
+               data = data2, tau = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1))
+
+qr.model[["coefficients"]]
+```
+
+```{r E_extract_coefficients_significance}
+# Extract the summary from the quantile regression model
+summary_output <- summary(qr.model, se = "boot")
+
+# Extract the coefficients with significance stars
+coefficients_with_stars <- extract_coefficients(summary_output)
+
+# Print the coefficients with stars to check
+print(coefficients_with_stars)
+
+# Define the coefficient names and tau levels
+coef_names <- c("Intercept", "passengers.in.change.pct")  # Only relevant coefficients
+tau_levels <- seq(0.1, 1, by = 0.1)
+
+# Create a data frame to hold tau levels and variable names
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+coef_with_tau <- coef_with_tau %>% arrange(as.numeric(tau))
+
+# Filter out the country fixed effects (keeping only Intercept and ln_pass)
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_with_stars[1:(num_tau_levels * num_coefficients)]
+
+# Combine the filtered coefficients with the tau information
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Print to verify
+print(coef_with_tau)
+```
+
+```{r E_export-to-excel}
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame (without fixed effects) with the additional information
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Read the data from the first sheet to determine the starting column
+sheet_data <- read.xlsx("Decile Analysis/Coefficient Tables/exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data (coefficients and additional info) to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/exported_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r E_plot_alltaus}
+# Extract coefficients without stars from the summary output
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+# Filter out the country fixed effects
+num_tau_levels <- length(tau_levels)
+num_coefficients <- length(coef_names)
+coefficients_filtered <- coefficients_without_stars[1:(num_tau_levels * num_coefficients)]
+
+# Create a dataframe with tau and variable combinations
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+# Arrange by tau for plotting
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients without stars and tau information (only for relevant variables)
+coef_with_tau$coefficients <- coefficients_filtered
+
+# Filter out intercept if you want to plot only the variable of interest
+coef_with_tau <- coef_with_tau %>%
+  filter(variable == "passengers.in.change.pct")
+
+# Load necessary libraries for plotting
+library(ggplot2)
+
+# Plot coefficients against tau
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (change in passengers pct)", 
+       y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", 
+       title = "Coefficients vs. Tau",
+       subtitle = "With controls (battle fatalities and Real GDP) and country fixed effects") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+# Save the plot as a .jpg file
+ggsave("Decile Analysis/Plots/decile_plotE.jpg", width = 10, height = 5, units = "in", dpi = 300)
+
+```
+
+```{r E_cutoffs}
+# Calculate the quantiles for logged total passengers
+passenger_cutoffs <- quantile(data2$passengers.in.change.pct, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on passengers in change pct, with same controls as above AND country fixed effects."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Load the existing workbook for Tau cutoffs
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx")
+
+# Determine the next available row to insert data
+existing_data <- read.xlsx("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", sheet = "Tau_Cutoffs")
+start_row <- nrow(existing_data) + 3  # Two empty lines before data
+
+# Write the cutoff data to the existing sheet with two empty lines before
+writeData(wb, sheet = "Tau_Cutoffs", cutoff_df, startRow = start_row, colNames = TRUE)
+
+# Write the model note at the next row
+writeData(wb, sheet = "Tau_Cutoffs", model_note, startRow = start_row + nrow(cutoff_df) + 1, colNames = FALSE)
+
+# Save the updated workbook
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+
+
+
+##Decile Regression 6
+Decile OLS regression of total FDI on PERCENTAGE INCREASE of passengers flying into a country on US carriers.
+
+```{r F_quantile}
+qr.model <- rq(log_FDI_n ~ passengers.in.change.pct, 
+               data = data2, tau = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+qr.model[["coefficients"]]
+```
+
+```{r F_extract_coefficients_significance}
+summary_output <- summary(qr.model, se = "boot")
+coefficients_with_stars <- extract_coefficients(summary_output)
+print(coefficients_with_stars)
+
+# Extracted coefficients with tau and variable names
+coef_names <- c("Intercept", "passengers.in.change.pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_with_stars 
+```
+
+```{r F_export-to-excel}
+#install.packages("openxlsx")
+#library(openxlsx)
+
+# Create a data frame to store the formula and weights information
+additional_info <- data.frame(
+  tau = NA,
+  variable = NA,
+  coefficients = NA
+)
+
+# Add the formula information
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Formula", coefficients = as.character(qr.model$formula)))
+
+# Add the weights information
+weights <- ifelse(is.null(qr.model$call$weights), "N/A", as.character(qr.model$call$weights))
+additional_info <- rbind(additional_info, data.frame(tau = NA, variable = "Weights", coefficients = weights))
+
+# Combine the coefficients data frame with the additional information data frame
+final_df <- rbind(coef_with_tau, additional_info)
+
+# Load the existing Excel file
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/exported_tables.xlsx")
+
+# Get the names of existing sheets
+sheet_names <- names(wb$worksheets)
+
+# Get the number of columns in the first sheet
+sheet_data <- read.xlsx("Decile Analysis/Coefficient Tables/exported_tables.xlsx", sheet = 1)
+current_col <- max(1, ncol(sheet_data) + 1)
+
+# Write the data to the existing Excel file
+writeData(wb, sheet = 1, final_df, startCol = current_col, startRow = 1)
+
+# Save the changes to the Excel file
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/exported_tables.xlsx", overwrite = TRUE)
+```
+
+```{r F_plot_alltaus}
+coefficients_without_stars <- extract_coefficients_nostars(summary_output)
+
+coef_names <- c("Intercept", "passengers.in.change.pct")
+tau_levels <- seq(0.1, 1, by = 0.1)
+coef_with_tau <- expand.grid(tau = tau_levels, variable = coef_names)
+
+coef_with_tau <- coef_with_tau %>%
+  arrange(as.numeric(tau))
+
+# Combine coefficients with stars and tau information
+coef_with_tau$coefficients <- coefficients_without_stars 
+
+coef_with_tau <- coef_with_tau %>%
+  filter(variable != "Intercept")
+
+# Plotting coefficients against tau
+library(ggplot2)
+ggplot(coef_with_tau, aes(x = tau, y = as.numeric(coefficients), group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(x = "Tau (percent change in passengers flying into the country)", y = "Coefficients (relationship with logged total nominal FDI in terms of $US)", title = "Coefficients vs. Tau") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1))
+
+ggsave("Decile Analysis/Plots/decile_plotF.jpg", width = 10, height = 5, units = "in", dpi = 300)
+```
+
+```{r F_cutoffs}
+# Calculate the quantiles for logged total passengers
+passenger_cutoffs <- quantile(data2$passengers.in.change.pct, probs = seq(0, 1, by = 0.1))
+
+# Create a data frame for cutoffs
+cutoff_df <- data.frame(
+  Tau = seq(0, 1, by = 0.1),
+  Cutoff = passenger_cutoffs
+)
+
+# Create a note for the model variables
+model_note <- "Model: Logged total FDI on passengers in change pct."
+
+# Load necessary library for Excel export
+library(openxlsx)
+
+# Load the existing workbook for Tau cutoffs
+wb <- loadWorkbook("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx")
+
+# Determine the next available row to insert data
+existing_data <- read.xlsx("Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", sheet = "Tau_Cutoffs")
+start_row <- nrow(existing_data) + 3  # Two empty lines before data
+
+# Write the cutoff data to the existing sheet with two empty lines before
+writeData(wb, sheet = "Tau_Cutoffs", cutoff_df, startRow = start_row, colNames = TRUE)
+
+# Write the model note at the next row
+writeData(wb, sheet = "Tau_Cutoffs", model_note, startRow = start_row + nrow(cutoff_df) + 1, colNames = FALSE)
+
+# Save the updated workbook
+saveWorkbook(wb, "Decile Analysis/Coefficient Tables/tau_cutoffs.xlsx", overwrite = TRUE)
+
+# Print the cutoff values for verification
+print(cutoff_df)
+```
+

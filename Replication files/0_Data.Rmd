@@ -80,7 +80,7 @@ ACLED_month_types <- ACLED2 %>%
     summarize(fatalities_m = sum(fatalities),
               count_events_m = n(),
               type = event_type[1]) %>%
-  select(-event_type)
+  dplyr::select(-event_type)
 
 ACLED_month <- full_join(ACLED_month_total, ACLED_month_types)
 
@@ -90,7 +90,7 @@ ACLED_year_types <- ACLED2 %>%
     summarize(fatalities_y = sum(fatalities),
               count_events_y = n(),
               type = event_type[1]) %>%
-  select(-event_type)
+  dplyr::select(-event_type)
 
 ACLED_year <- full_join(ACLED_year_total, ACLED_year_types)
 
@@ -107,13 +107,13 @@ ACLED_year <- ACLED_year %>%
   pivot_longer(cols = 3:4, names_to = "Indicator.Name", values_to = "value") %>%
   mutate(Country.Name = country,
          Indicator.Name = paste0(Indicator.Name, ", ", type)) %>%
-  select(-type, -country)
+  dplyr::select(-type, -country)
 
 ACLED_month <- ACLED_month %>% 
   pivot_longer(cols = 3:4, names_to = "Indicator.Name", values_to = "value") %>%
   mutate(Country.Name = country,
          Indicator.Name = paste0(Indicator.Name, ", ", type)) %>%
-  select(-type, -country)
+  dplyr::select(-type, -country)
 ```
 
 ##World Bank economic indicator data
@@ -505,7 +505,7 @@ y <- complete_data
 ##Generate percentage change variables (US flight data)
 Code to generate the "change in flights" variables is below.
 Results will be in percentage change terms (Since they were multiplied by 100).
-(TO ADD:) If the value from the previous year was 0, the change was calculated with a denominator set to .5 (preventing an "Inf" result and producing a result as if the baseline were just .5 of a flight, still showing an increase if 1 singular flight is recorded).
+If the value from the previous year was 0, the change was calculated with a denominator set to .5 (preventing an "Inf" result and producing a result as if the baseline were just .75 of a flight, still showing an increase if 1 singular flight is recorded).
 
 ```{r year-flights}
 setwd("/Users/michelle/Documents/ukr2024/All Research Documents (Feb-Sept 2024)/backups/mar 5 backup/UKR-airports/data")
@@ -520,6 +520,7 @@ subset <- z %>%
 
 subset <- subset %>%
   pivot_wider(names_from = Indicator.Name, values_from = value)
+
 
 changes <- subset %>%
   arrange(Country.Name, year) %>%
@@ -538,10 +539,10 @@ changes <- subset %>%
     passengers_in_change_pct = ifelse(
       is.na(lag(total_passengers_in)), NA,
       ifelse(
-        lag(total_passengers_in) != 0,
+        lag(total_passengers_in) > 100, #there are some non-meaningful (non-commercial) low levels we need to ignore
         ((total_passengers_in - lag(total_passengers_in)) / lag(total_passengers_in)) * 100,
-        ((total_passengers_in - lag(total_passengers_in)) / 0.75) * 100
-      )
+        ((total_passengers_in - lag(total_passengers_in)) / 100) * 100
+      )                                          #using 100 passengers as a baseline 
     ),
     
     mail_in_change_pct = ifelse(
@@ -574,9 +575,9 @@ changes <- subset %>%
     passengers_out_change_pct = ifelse(
       is.na(lag(total_passengers_out)), NA,
       ifelse(
-        lag(total_passengers_out) != 0,
+        lag(total_passengers_out) > 100,
         ((total_passengers_out - lag(total_passengers_out)) / lag(total_passengers_out)) * 100,
-        ((total_passengers_out - lag(total_passengers_out)) / 0.75) * 100
+        ((total_passengers_out - lag(total_passengers_out)) / 100) * 100
       )
     ),
     
@@ -598,6 +599,46 @@ changes <- subset %>%
       )
     )
   )
+```
+
+Let's deal with the outliers produced by going from 0 to a high flight number by dropping everything on and before that year. (If it wasn't an extreme result, we keep it, because it still represents an increase from 0. Recall that we set the division by a baseline of 100 to minimize extreme results)
+```{r clean_pct}
+ggplot(data=changes, mapping = aes(x=year,y=passengers_in_change_pct)) +
+  geom_point()
+
+# Identify the first year with passengers_in_change_pct > 2500 for each country
+high_increase_years <- changes %>%
+  filter(passengers_in_change_pct > 2500) %>%
+  group_by(Country.Name) %>%
+  summarize(first_high_year = min(year)) %>%
+  ungroup() %>%
+  arrange(first_high_year)
+
+# Remove all observations for those countries on or before the year of the first high increase
+changes <- changes %>%
+  left_join(high_increase_years, by = "Country.Name") %>%
+  filter(is.na(first_high_year) | year > first_high_year) %>%
+  select(-first_high_year)
+
+#Reiterate to catch leftovers
+
+# Identify the first year with passengers_in_change_pct > 2500 for each country
+high_increase_years <- changes %>%
+  filter(passengers_in_change_pct > 2500) %>%
+  group_by(Country.Name) %>%
+  summarize(first_high_year = min(year)) %>%
+  ungroup() %>%
+  arrange(first_high_year)
+
+# Remove all observations for those countries on or before the year of the first high increase
+changes <- changes %>%
+  left_join(high_increase_years, by = "Country.Name") %>%
+  filter(is.na(first_high_year) | year > first_high_year) %>%
+  select(-first_high_year)
+
+# Plot to verify the removal
+ggplot(data = changes, mapping = aes(x = year, y = passengers_in_change_pct)) +
+  geom_point()
 
 changes <- changes %>%
   pivot_longer(cols = 3:ncol(changes),
@@ -672,7 +713,7 @@ scm_data <- data_master %>%
 #Note: you can add variables in the filter above and export the resulting dataset in order to add more columns. for instance, add: , "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct"
 ```
 
-We have a problem with NA values. Let's fill in all ACLED and flight-count cases with NA with 0, since if they weren't included, there were no events, counts, fatalities, and so on. Then let's use "Last observation carried forward" to impute the 2023 values for all countries with NAs for 2023, since we can assume for many countries this will be a good estimate of the 2023 value.
+We have a problem with NA values. Let's fill in all ACLED and flight-count cases with NA with 0, since if they weren't included, there were no events, counts, fatalities, and so on. 
 ```{r na}
 library(zoo)
 
@@ -695,48 +736,6 @@ scm_data_imputed <- scm_data %>%
 scm_data_imputed %>%
   filter(if_any(all_of(variables_to_impute), is.na))
 #Success!
-
-
-#1.5: Airports Volume and Airports Count
-#These are according to 2018 numbers, but we can spread this throughout the time series so that this variable can be taken into account in the regression.
-
-
-# Filter for the observation in 2018 for AirportsCount and AirportsVolume
-observation_2023 <- scm_data_imputed %>%
-  filter(year == 2023) %>%
-  select(Country.Name, AirportsCount_2023 = AirportsCount, AirportsVolume_2023 = AirportsVolume)
-
-# Join the observation for 2018 with the original dataset
-scm_data_imputed <- scm_data_imputed %>%
-  left_join(observation_2023, by = "Country.Name") %>%
-  mutate(
-    AirportsCount = ifelse(is.na(AirportsCount), AirportsCount_2023, AirportsCount),
-    AirportsVolume = ifelse(is.na(AirportsVolume), AirportsVolume_2023, AirportsVolume)
-  ) %>%
-  select(-AirportsCount_2023, -AirportsVolume_2023)
-
-
-
-
-#2: 2023 observations -> LOCF
-
-# Define a vector with all variables
-variables <- c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", 
-                "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", 
-                "count_events_y, Violence against civilians", "count_events_y, Strategic developments", 
-                "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", 
-                "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", 
-                "GDP growth (annual %)", "Inflation, GDP deflator (annual %)", 
-                "total_passengers_in", "total_passengers_out", 
-                "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", 
-                "Foreign direct investment, net inflows (% of GDP)")
-
-# Impute missing values using LOCF for 2023 after filling forward
-scm_data_imputed <- scm_data_imputed %>%
-  group_by(Country.Name) %>%
-  mutate(across(all_of(variables), ~zoo::na.locf(., na.rm = FALSE))) %>%
-  group_by(Country.Name) %>%
-  mutate(across(all_of(variables), ~ifelse(is.na(.), zoo::na.locf(., na.rm = FALSE), .)))
 
 
 #some rows still have NAs. It seems like they are small countries or incorrectly named countries. Let's just drop them for simplicity.
@@ -936,4 +935,5 @@ log_battle = battle fatalities, logged+1
 setwd("/Users/michelle/Documents/ukr2024/Replication files")
 write.csv(data, "full_data.csv")
 ```
+
 
