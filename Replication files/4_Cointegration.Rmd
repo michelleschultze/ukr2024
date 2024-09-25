@@ -1,0 +1,144 @@
+---
+title: "Difference-in-Difference Analysis"
+author: "Michelle Schultze"
+date: "Sept 21, 2024"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+---
+
+```{r}
+#install.packages("urca")
+library(urca)
+library(dplyr)
+#install.packages("knitr")
+library(knitr)
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data.csv")
+```
+
+```{r}
+variables <- c(
+  "Foreign.direct.investment.net.inflows.pct.of.GDP", 
+  "GDP.current.US$", 
+  "GDP.growth.annual.pct", 
+  "total.passengers.in", 
+  "fatalities.y.Battles", 
+  "flights.in.change.pct", 
+  "passengers.in.change.pct", 
+  "GDP per capita, PPP (constant 2017 international $)", 
+#  "GDP, PPP (constant 2017 international $)", #too cointegrated with current $US GDP
+  "total_FDI_n"
+#  ,"total_FDI_r" $too cointegrated with nominal FDI
+)
+
+# Subset the data to include only the specified variables
+data_subset <- data %>%
+  dplyr::select(all_of(variables)) %>%
+  na.omit()
+```
+
+```{r}
+# Calculate the correlation matrix
+cor_matrix <- cor(data_subset, use = "pairwise.complete.obs")
+
+# Save the correlation matrix to an HTML file
+html_output <- kable(cor_matrix, digits = 2, format = "html")
+
+# Write to an HTML file
+writeLines(html_output, "Cointegration testing/correlation_matrix.html")
+
+```
+
+
+```{r}
+results <- list()
+error_pairs <- list()
+
+for (i in 1:length(variables)) {
+  for (j in (i + 1):length(variables)) {
+    
+    # Check if both variables are valid column names
+    if (!all(c(variables[i], variables[j]) %in% colnames(data_subset))) {
+      next  # Skip if either variable is not in data_subset
+    }
+    
+    test_data <- data_subset %>% select(all_of(c(variables[i], variables[j])))
+    
+    # Skip if there are any NA values in the test_data
+    if (any(is.na(test_data))) {
+      next
+    }
+    
+    tryCatch({
+      coin_test <- ca.jo(test_data, type = "trace", ecdet = "none", K = 2)
+      results[[paste(variables[i], variables[j], sep = "_")]] <- summary(coin_test)
+    }, error = function(e) {
+      error_pairs[[paste(variables[i], variables[j], sep = "_")]] <- e$message
+    })
+  }
+}
+
+```
+
+
+```{r}
+# Initialize an empty list to store cointegrated pairs
+cointegrated_pairs <- list()
+
+# Loop through each result in the 'results' object
+for (pair in names(results)) {
+  
+  # Extract the summary of the Johansen test for the pair
+  summary_result <- results[[pair]]
+  
+  # Extract the test statistic and critical value for r = 0
+  test_stat <- summary_result@teststat[1]  # r = 0 row
+  crit_value <- summary_result@cval[1, 2]  # 5% critical value for r = 0
+  
+  # Check if the test statistic is greater than the 5% critical value
+  if (test_stat > crit_value) {
+    # Split the pair string to get the variable names (e.g., "var1_var2")
+    variables <- strsplit(pair, "_")[[1]]
+    
+    # Add the pair of variables to the list if they are cointegrated
+    cointegrated_pairs[[length(cointegrated_pairs) + 1]] <- variables
+  }
+}
+
+# Convert the list of cointegrated pairs to a more readable format
+# Optionally convert to a data frame for easier viewing
+cointegrated_pairs_df <- do.call(rbind, cointegrated_pairs)
+colnames(cointegrated_pairs_df) <- c("Variable 1", "Variable 2")
+
+# Print the cointegrated pairs data frame
+print(cointegrated_pairs_df)
+
+```
+
+```{r}
+# If 'cointegrated_pairs_df' is already in data frame format (from previous step):
+write.csv(cointegrated_pairs_df, file = "Cointegration testing/cointegrated_pairs.csv", row.names = FALSE)
+```
+
+
+```{r}
+# Export the entire 'results' object to a text file
+sink("Cointegration testing/johansen_test_full_results.txt")
+
+for (pair in names(results)) {
+  cat("========================================\n")
+  cat("Variable Pair:", pair, "\n")
+  cat("========================================\n")
+  print(results[[pair]])  # This will print the entire result object for each pair
+  cat("\n\n")
+}
+
+sink()
+```
+

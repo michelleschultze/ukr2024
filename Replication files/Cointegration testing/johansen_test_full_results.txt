@@ -1,0 +1,753 @@
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_GDP.growth.annual.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.23212437 0.09982261
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  307.18  6.50  8.18 11.65
+r = 0  | 1078.70 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                    Foreign.direct.investment.net.inflows.pct.of.GDP.l2 GDP.growth.annual.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                              1.0000                 1.000000
+GDP.growth.annual.pct.l2                                                                       176.7952                -0.514067
+
+Weights W:
+(This is the loading matrix)
+
+                                                   Foreign.direct.investment.net.inflows.pct.of.GDP.l2 GDP.growth.annual.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                        -0.002161106             -0.259291883
+GDP.growth.annual.pct.d                                                                   -0.003829452              0.002463678
+
+
+
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_total.passengers.in 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.10325968 0.03155342
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  93.65  6.50  8.18 11.65
+r = 0  | 412.01 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                    Foreign.direct.investment.net.inflows.pct.of.GDP.l2 total.passengers.in.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                        1.000000e+00           1.0000000000
+total.passengers.in.l2                                                                    -3.202795e-06           0.0002372285
+
+Weights W:
+(This is the loading matrix)
+
+                                                   Foreign.direct.investment.net.inflows.pct.of.GDP.l2 total.passengers.in.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                          -0.2628443           1.409672e-03
+total.passengers.in.d                                                                      287.9844779          -2.721389e+02
+
+
+
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_fatalities.y.Battles 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.2281466 0.1000369
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  307.88  6.50  8.18 11.65
+r = 0  | 1064.30 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                    Foreign.direct.investment.net.inflows.pct.of.GDP.l2 fatalities.y.Battles.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                            1.000000            1.0000000000
+fatalities.y.Battles.l2                                                                        1.669893           -0.0004756345
+
+Weights W:
+(This is the loading matrix)
+
+                                                   Foreign.direct.investment.net.inflows.pct.of.GDP.l2 fatalities.y.Battles.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                       -0.0001442827              -0.2608690
+fatalities.y.Battles.d                                                                   -0.2647219833               0.0860109
+
+
+
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_flights.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.3648583 0.1000565
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  307.94  6.50  8.18 11.65
+r = 0  | 1633.80 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                    Foreign.direct.investment.net.inflows.pct.of.GDP.l2 flights.in.change.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                             1.00000              1.000000000
+flights.in.change.pct.l2                                                                      -80.32019             -0.004378232
+
+Weights W:
+(This is the loading matrix)
+
+                                                   Foreign.direct.investment.net.inflows.pct.of.GDP.l2 flights.in.change.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                        2.191904e-05             -0.260990852
+flights.in.change.pct.d                                                                   1.409917e-02              0.006825387
+
+
+
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_passengers.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.2900154 0.1000406
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  307.89  6.50  8.18 11.65
+r = 0  | 1308.37 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                    Foreign.direct.investment.net.inflows.pct.of.GDP.l2 passengers.in.change.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                             1.00000                 1.000000000
+passengers.in.change.pct.l2                                                                   -83.37376                -0.003493834
+
+Weights W:
+(This is the loading matrix)
+
+                                                   Foreign.direct.investment.net.inflows.pct.of.GDP.l2 passengers.in.change.pct.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                        2.374069e-05                -0.260965081
+passengers.in.change.pct.d                                                                1.059272e-02                -0.005870824
+
+
+
+========================================
+Variable Pair: Foreign.direct.investment.net.inflows.pct.of.GDP_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.10356524 0.02793166
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  82.75  6.50  8.18 11.65
+r = 0  | 402.10 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       Foreign.direct.investment.net.inflows.pct.of.GDP.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                           1.0000000000
+GDP.per.capita..PPP..constant.2017.international....l2                                       -0.0004807133
+                                                       GDP.per.capita..PPP..constant.2017.international....l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.l2                                                1.00000000
+GDP.per.capita..PPP..constant.2017.international....l2                                             0.04526837
+
+Weights W:
+(This is the loading matrix)
+
+                                                      Foreign.direct.investment.net.inflows.pct.of.GDP.l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                             -0.2661869
+GDP.per.capita..PPP..constant.2017.international....d                                           4.2532782
+                                                      GDP.per.capita..PPP..constant.2017.international....l2
+Foreign.direct.investment.net.inflows.pct.of.GDP.d                                             -0.0009626905
+GDP.per.capita..PPP..constant.2017.international....d                                          -1.2074382864
+
+
+
+========================================
+Variable Pair: GDP.growth.annual.pct_total.passengers.in 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.23519467 0.03188381
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  94.65  6.50  8.18 11.65
+r = 0  | 877.87 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                         GDP.growth.annual.pct.l2 total.passengers.in.l2
+GDP.growth.annual.pct.l2             1.000000e+00           1.0000000000
+total.passengers.in.l2               3.218286e-07          -0.0001622722
+
+Weights W:
+(This is the loading matrix)
+
+                        GDP.growth.annual.pct.l2 total.passengers.in.l2
+GDP.growth.annual.pct.d               -0.6882003          -2.902945e-05
+total.passengers.in.d              -1184.7857130           4.025029e+02
+
+
+
+========================================
+Variable Pair: GDP.growth.annual.pct_fatalities.y.Battles 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.2342278 0.2254593
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  746.27  6.50  8.18 11.65
+r = 0  | 1525.80 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                         GDP.growth.annual.pct.l2 fatalities.y.Battles.l2
+GDP.growth.annual.pct.l2              1.000000000             1.000000000
+fatalities.y.Battles.l2              -0.002545092             0.005820174
+
+Weights W:
+(This is the loading matrix)
+
+                        GDP.growth.annual.pct.l2 fatalities.y.Battles.l2
+GDP.growth.annual.pct.d                -0.483245              -0.1948372
+fatalities.y.Battles.d                 52.974144             -52.7774449
+
+
+
+========================================
+Variable Pair: GDP.growth.annual.pct_flights.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.3785094 0.2235850
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  739.21  6.50  8.18 11.65
+r = 0  | 2128.54 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                         GDP.growth.annual.pct.l2 flights.in.change.pct.l2
+GDP.growth.annual.pct.l2                1.0000000               1.00000000
+flights.in.change.pct.l2               -0.1806912               0.01311238
+
+Weights W:
+(This is the loading matrix)
+
+                        GDP.growth.annual.pct.l2 flights.in.change.pct.l2
+GDP.growth.annual.pct.d              -0.09726256               -0.5857928
+flights.in.change.pct.d               5.98272518               -4.4139823
+
+
+
+========================================
+Variable Pair: GDP.growth.annual.pct_passengers.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.2936879 0.2290392
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  759.80  6.50  8.18 11.65
+r = 0  | 1775.43 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                            GDP.growth.annual.pct.l2 passengers.in.change.pct.l2
+GDP.growth.annual.pct.l2                   1.0000000                 1.000000000
+passengers.in.change.pct.l2               -0.1780654                 0.008673485
+
+Weights W:
+(This is the loading matrix)
+
+                           GDP.growth.annual.pct.l2 passengers.in.change.pct.l2
+GDP.growth.annual.pct.d                  -0.0371032                  -0.6418856
+passengers.in.change.pct.d                4.7843508                  -3.7549504
+
+
+
+========================================
+Variable Pair: GDP.growth.annual.pct_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.24165752 0.02806035
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  83.14  6.50  8.18 11.65
+r = 0  | 891.14 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       GDP.growth.annual.pct.l2
+GDP.growth.annual.pct.l2                                           1.000000e+00
+GDP.per.capita..PPP..constant.2017.international....l2             3.587701e-05
+                                                       GDP.per.capita..PPP..constant.2017.international....l2
+GDP.growth.annual.pct.l2                                                                          1.000000000
+GDP.per.capita..PPP..constant.2017.international....l2                                           -0.007201522
+
+Weights W:
+(This is the loading matrix)
+
+                                                      GDP.growth.annual.pct.l2 GDP.per.capita..PPP..constant.2017.international....l2
+GDP.growth.annual.pct.d                                              -0.699706                                            0.000671191
+GDP.per.capita..PPP..constant.2017.international....d                18.928856                                            7.683525421
+
+
+
+========================================
+Variable Pair: total.passengers.in_fatalities.y.Battles 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.22835874 0.03189884
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  94.69  6.50  8.18 11.65
+r = 0  | 851.92 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                        total.passengers.in.l2 fatalities.y.Battles.l2
+total.passengers.in.l2                    1.00                  1.0000
+fatalities.y.Battles.l2               46291.63                -20.3792
+
+Weights W:
+(This is the loading matrix)
+
+                       total.passengers.in.l2 fatalities.y.Battles.l2
+total.passengers.in.d           -2.984046e-04           -6.535806e-02
+fatalities.y.Battles.d          -9.551204e-06            3.171753e-06
+
+
+
+========================================
+Variable Pair: total.passengers.in_flights.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.36649677 0.03191105
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |   94.73  6.50  8.18 11.65
+r = 0  | 1428.14 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                         total.passengers.in.l2 flights.in.change.pct.l2
+total.passengers.in.l2                      1.0                   1.0000
+flights.in.change.pct.l2               311515.1                -127.3089
+
+Weights W:
+(This is the loading matrix)
+
+                        total.passengers.in.l2 flights.in.change.pct.l2
+total.passengers.in.d            -2.297125e-04            -6.544199e-02
+flights.in.change.pct.d          -3.651743e-06             1.231047e-07
+
+
+
+========================================
+Variable Pair: total.passengers.in_passengers.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.29032910 0.03191583
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |   94.75  6.50  8.18 11.65
+r = 0  | 1096.51 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                            total.passengers.in.l2 passengers.in.change.pct.l2
+total.passengers.in.l2                         1.0                     1.00000
+passengers.in.change.pct.l2               520118.5                   -90.25899
+
+Weights W:
+(This is the loading matrix)
+
+                           total.passengers.in.l2 passengers.in.change.pct.l2
+total.passengers.in.d               -6.512408e-05               -6.546591e-02
+passengers.in.change.pct.d          -1.699575e-06                6.035552e-08
+
+
+
+========================================
+Variable Pair: total.passengers.in_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.03379372 0.02740195
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  81.16  6.50  8.18 11.65
+r = 0  | 181.58 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       total.passengers.in.l2 GDP.per.capita..PPP..constant.2017.international....l2
+total.passengers.in.l2                                                1.00000                                                 1.0000
+GDP.per.capita..PPP..constant.2017.international....l2              -45.21934                                               210.7206
+
+Weights W:
+(This is the loading matrix)
+
+                                                      total.passengers.in.l2 GDP.per.capita..PPP..constant.2017.international....l2
+total.passengers.in.d                                          -0.0574809728                                           -0.009716056
+GDP.per.capita..PPP..constant.2017.international....d           0.0002557875                                           -0.000212843
+
+
+
+========================================
+Variable Pair: fatalities.y.Battles_flights.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.3653127 0.2281912
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  756.59  6.50  8.18 11.65
+r = 0  | 2084.55 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                         fatalities.y.Battles.l2 flights.in.change.pct.l2
+fatalities.y.Battles.l2                   1.0000               1.00000000
+flights.in.change.pct.l2               -353.5057              -0.04364277
+
+Weights W:
+(This is the loading matrix)
+
+                        fatalities.y.Battles.l2 flights.in.change.pct.l2
+fatalities.y.Battles.d             0.0001376542            -0.4420286673
+flights.in.change.pct.d            0.0032085993            -0.0002099974
+
+
+
+========================================
+Variable Pair: fatalities.y.Battles_passengers.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.2904884 0.2277299
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |  754.85  6.50  8.18 11.65
+r = 0  | 1757.27 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                            fatalities.y.Battles.l2 passengers.in.change.pct.l2
+fatalities.y.Battles.l2                      1.0000                   1.0000000
+passengers.in.change.pct.l2                136.6237                  -0.9504677
+
+Weights W:
+(This is the loading matrix)
+
+                           fatalities.y.Battles.l2 passengers.in.change.pct.l2
+fatalities.y.Battles.d                -0.003769433                -0.438068590
+passengers.in.change.pct.d            -0.006422791                 0.005921725
+
+
+
+========================================
+Variable Pair: fatalities.y.Battles_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.22920862 0.02804432
+
+Values of teststatistic and critical values of test:
+
+           test 10pct  5pct  1pct
+r <= 1 |  83.09  6.50  8.18 11.65
+r = 0  | 843.53 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       fatalities.y.Battles.l2 GDP.per.capita..PPP..constant.2017.international....l2
+fatalities.y.Battles.l2                                            1.000000000                                                  1.000
+GDP.per.capita..PPP..constant.2017.international....l2             0.003746249                                                166.948
+
+Weights W:
+(This is the loading matrix)
+
+                                                      fatalities.y.Battles.l2 GDP.per.capita..PPP..constant.2017.international....l2
+fatalities.y.Battles.d                                            -0.44430143                                           7.009812e-07
+GDP.per.capita..PPP..constant.2017.international....d              0.02554936                                          -3.329189e-04
+
+
+
+========================================
+Variable Pair: flights.in.change.pct_passengers.in.change.pct 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.3712046 0.2902541
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 | 1001.46  6.50  8.18 11.65
+r = 0  | 2356.66 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                            flights.in.change.pct.l2 passengers.in.change.pct.l2
+flights.in.change.pct.l2                   1.0000000                     1.00000
+passengers.in.change.pct.l2               -0.2227433                   -46.71584
+
+Weights W:
+(This is the loading matrix)
+
+                           flights.in.change.pct.l2 passengers.in.change.pct.l2
+flights.in.change.pct.d                  -1.1486307                 0.004810628
+passengers.in.change.pct.d                0.0180517                 0.019004396
+
+
+
+========================================
+Variable Pair: flights.in.change.pct_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.36664818 0.02803772
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |   83.07  6.50  8.18 11.65
+r = 0  | 1417.17 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       flights.in.change.pct.l2
+flights.in.change.pct.l2                                           1.0000000000
+GDP.per.capita..PPP..constant.2017.international....l2             0.0002480553
+                                                       GDP.per.capita..PPP..constant.2017.international....l2
+flights.in.change.pct.l2                                                                            1.0000000
+GDP.per.capita..PPP..constant.2017.international....l2                                             -0.4516607
+
+Weights W:
+(This is the loading matrix)
+
+                                                      flights.in.change.pct.l2 GDP.per.capita..PPP..constant.2017.international....l2
+flights.in.change.pct.d                                             -1.1373699                                          -1.491208e-05
+GDP.per.capita..PPP..constant.2017.international....d               -0.2874986                                           1.229765e-01
+
+
+
+========================================
+Variable Pair: passengers.in.change.pct_GDP per capita, PPP (constant 2017 international $) 
+========================================
+
+###################### 
+# Johansen-Procedure # 
+###################### 
+
+Test type: trace statistic , with linear trend 
+
+Eigenvalues (lambda):
+[1] 0.29050613 0.02803659
+
+Values of teststatistic and critical values of test:
+
+            test 10pct  5pct  1pct
+r <= 1 |   83.06  6.50  8.18 11.65
+r = 0  | 1085.56 15.66 17.95 23.52
+
+Eigenvectors, normalised to first column:
+(These are the cointegration relations)
+
+                                                       passengers.in.change.pct.l2
+passengers.in.change.pct.l2                                           1.0000000000
+GDP.per.capita..PPP..constant.2017.international....l2                0.0001251866
+                                                       GDP.per.capita..PPP..constant.2017.international....l2
+passengers.in.change.pct.l2                                                                         1.0000000
+GDP.per.capita..PPP..constant.2017.international....l2                                             -0.4845912
+
+Weights W:
+(This is the loading matrix)
+
+                                                      passengers.in.change.pct.l2
+passengers.in.change.pct.d                                             -0.8839967
+GDP.per.capita..PPP..constant.2017.international....d                  -0.2128690
+                                                      GDP.per.capita..PPP..constant.2017.international....l2
+passengers.in.change.pct.d                                                                      6.125797e-05
+GDP.per.capita..PPP..constant.2017.international....d                                           1.146554e-01
+
+
+
