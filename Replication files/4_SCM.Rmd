@@ -11,3 +11,132 @@ output:
 ---
 ---
 
+```{r}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+library("readr")
+#install.packages("Synth")
+library(Synth)
+library("LowRankQP")
+#install.packages("quantreg")
+library(quantreg)
+#install.packages("openxlsx")
+library(openxlsx)
+library(gsynth)
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data.csv")
+```
+
+
+Generate treatment variable (coded as “1” for any year after the largest percentage increase in a country's air traffic, given that the amount exceeds a 200% increase, or a tripling), and the post*treatment variable (the number of years after the first treatment year).
+
+```{r}
+dataDID <- data %>%
+  group_by(Country.Name) %>%
+  mutate(flag = ifelse((passengers.in.change.pct >= 200 & passengers.in.change.pct == max(passengers.in.change.pct)), TRUE, FALSE))
+
+dataDID <- dataDID %>%
+  arrange(Country.Name, year) %>%
+  group_by(Country.Name) %>%
+  mutate(flag = ifelse((((Country.Name == lag(Country.Name)) & (lag(flag) == TRUE)) | flag == TRUE), TRUE, flag)) %>%
+  mutate(flag = ifelse(cumsum(flag) > 0, TRUE, FALSE))
+
+dataDID <- dataDID %>%
+  mutate(Treat = as.integer(flag)) %>%
+  group_by(Country.Name) %>%
+  mutate(After = cumsum(flag))
+
+dataDID <- dataDID %>%
+  filter(!Country.Name == "Eritrea",
+         !Country.Name == "French Polynesia",
+         !Country.Name == "New Caledonia") #These have NAs in critical variables for the model.
+
+
+dataDID %>%
+  group_by(Country.Name, Treat) %>%
+  filter(Treat == 1) %>%
+  summarize(n = n()) #27 countries in the sample where this occurs
+```
+
+```{r}
+# Assuming your data frame is named 'dataDID'
+# Get the column names after the 9th column
+variables_after_column_9 <- colnames(dataDID)[10:ncol(dataDID)]
+
+# Create a formatted string with quotation marks and commas
+formatted_variables_list <- paste0('"', variables_after_column_9, '"', collapse = ', ')
+
+# Print the formatted list
+cat(formatted_variables_list)
+```
+
+"log_FDI_n", "log_FDI_r", "ihs_FDI_n", "ihs_FDI_r", "log_GDP_n", "log_GDP_r", "log_GDP_r_pc", "log_battle"
+
+```{r}
+library(dplyr)
+library(augsynth)
+```
+
+```{r}
+# Step 2: Calculate relative years for each country based on the Treat variable
+dataDID_final <- dataDID_filtered %>%
+  group_by(`Country.Name`) %>%
+  mutate(first_treatment_year = min(`year`[Treat == 1], na.rm = TRUE)) %>%
+  mutate(relative_year = `year` - first_treatment_year) %>%
+  ungroup() %>%
+  # Create a treatment status variable indicating if the year is treated
+  mutate(treated = ifelse(`year` >= first_treatment_year & Treat == 1, 1, 0))
+
+```
+
+
+```{r}
+# Step 5: Define the covariates
+covariates <- c("GDP.current.US$", "GDP.growth.annual.pct", "total.flights.in",  
+                "total.flights.out", "total.freight.in", "total.freight.out",  
+                "total.passengers.in", "total.passengers.out",  
+                "count.events.y.All.types.of.violent.conflict", "count.events.y.Battles",  
+                "count.events.y.Explosions/Remote.violence", "count.events.y.Protests",  
+                "count.events.y.Strategic.developments",  
+                "count.events.y.Violence.against.civilians", "fatalities.y.Battles",  
+                "fatalities.y.Explosions/Remote.violence", "fatalities.y.Protests",  
+                "fatalities.y.Strategic.developments",  
+                "fatalities.y.Violence.against.civilians", "flights.in.change.pct",  
+                "passengers.in.change.pct", "GDP deflator (base year varies by country)",  
+                "GDP per capita, PPP (constant 2017 international $)",  
+                "GDP, PPP (constant 2017 international $)", "total_FDI_n",  
+                "total_FDI_r", "TreatmentIndicator")  
+
+# Wrap covariates in backticks
+covariates <- paste0("`", covariates, "`")
+
+# Construct the formula
+formula <- as.formula(paste("`total_FDI_n` ~ `TreatmentIndicator` +", paste(covariates, collapse = " + ")))
+```
+
+```{r}
+# Step 6: Run the augsynth model
+syn_model <- multisynth(
+  formula,
+  `Country.Name`,   # Unit variable
+  `year`,           # Time variable
+  data = dataDID_final
+)
+
+# Summary of results
+syn_summary <- summary(syn_model)
+```
+
+```{r}
+# Display the treatment effects summary
+print(syn_summary)
+
+# Plot the results
+plot(syn_summary)
+```
+
+

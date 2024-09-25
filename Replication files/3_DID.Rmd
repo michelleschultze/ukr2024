@@ -11,3 +11,128 @@ output:
 ---
 ---
 
+```{r}
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(readxl)
+library(naniar)
+library("readr")
+library("microsynth")
+library("LowRankQP")
+#install.packages("quantreg")
+library(quantreg)
+#install.packages("openxlsx")
+library(openxlsx)
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data.csv")
+```
+
+Generate treatment variable (coded as “1” for any year after the largest percentage increase in a country's air traffic, given that the amount exceeds a 200% increase, or a tripling), and the post*treatment variable (the number of years after the first treatment year).
+
+```{r}
+dataDID <- data %>%
+  group_by(Country.Name) %>%
+  mutate(flag = ifelse((passengers.in.change.pct >= 200 & passengers.in.change.pct == max(passengers.in.change.pct)), TRUE, FALSE))
+
+dataDID <- dataDID %>%
+  arrange(Country.Name, year) %>%
+  group_by(Country.Name) %>%
+  mutate(flag = ifelse((((Country.Name == lag(Country.Name)) & (lag(flag) == TRUE)) | flag == TRUE), TRUE, flag)) %>%
+  mutate(flag = ifelse(cumsum(flag) > 0, TRUE, FALSE))
+
+dataDID <- dataDID %>%
+  mutate(Treat = as.integer(flag)) %>%
+  group_by(Country.Name) %>%
+  mutate(After = cumsum(flag)) %>%
+  mutate(TreatAfter = Treat * After,
+         BattleAfter = lag(log_battle) * After,
+         BattleTreat = lag(log_battle) * Treat)
+
+
+#lm(ln_FDI ~ Treat + After + TreatAfter + ln_battle_fatalities * Treat + ln_GDP)
+
+dataDID %>%
+  group_by(Country.Name, After) %>%
+  filter(After == 1) %>%
+  summarize(n = n()) #27 countries in the sample where this occurs
+```
+
+
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+
+model.1a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct, data = dataDID)
+models[["IHS-Transformed Real FDI"]][["1a"]] <- model.1a
+hsd_testing[["IHS-Transformed Real FDI"]][["1a"]] <- bptest(model.1a)
+
+model.2a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["2a"]] <- model.2a
+hsd_testing[["IHS-Transformed Real FDI"]][["2a"]] <- bptest(model.2a)
+
+model.3a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["3a"]] <- model.3a
+hsd_testing[["IHS-Transformed Real FDI"]][["3a"]] <- bptest(model.3a)
+
+model.4a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + lag(GDP.growth.annual.pct), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["4a"]] <- model.4a
+hsd_testing[["IHS-Transformed Real FDI"]][["4a"]] <- bptest(model.4a)
+
+model.5a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + BattleTreat, data = dataDID)
+models[["IHS-Transformed Real FDI"]][["5a"]] <- model.5a
+hsd_testing[["IHS-Transformed Real FDI"]][["5a"]] <- bptest(model.5a)
+
+model.6a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + BattleAfter, data = dataDID)
+models[["IHS-Transformed Real FDI"]][["6a"]] <- model.6a
+hsd_testing[["IHS-Transformed Real FDI"]][["6a"]] <- bptest(model.6a)
+
+model.7a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + factor(Country.Name), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["7a"]] <- model.7a
+hsd_testing[["IHS-Transformed Real FDI"]][["7a"]] <- bptest(model.7a)
+
+model.8a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + lag(GDP.growth.annual.pct) + factor(Country.Name), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["8a"]] <- model.8a
+hsd_testing[["IHS-Transformed Real FDI"]][["8a"]] <- bptest(model.8a)
+
+model.9a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + BattleTreat + factor(Country.Name), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["9a"]] <- model.9a
+hsd_testing[["IHS-Transformed Real FDI"]][["9a"]] <- bptest(model.9a)
+
+model.10a <- lm(ihs_FDI_r ~ Treat + After + TreatAfter + passengers.in.change.pct + lag(log_battle) + lag(log_GDP_r) + BattleAfter + factor(Country.Name), data = dataDID)
+models[["IHS-Transformed Real FDI"]][["10a"]] <- model.10a
+hsd_testing[["IHS-Transformed Real FDI"]][["10a"]] <- bptest(model.10a)
+```
+
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '3a, FE', '4a, FE', '5a, FE', '6a, FE')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'Treat' = 'Treatment',
+         'After' = 'Post-Treatment',
+         'TreatAfter' = 'Treat * Post',
+         'passengers.in.change.pct' = 'Change in passengers (%)',
+         'lag(log_battle)' = 'Battle fatalities (log)', 
+         'lag(log_GDP_r)' = 'Real GDP (int$, log, lag)',
+         'lag(GDP.growth.annual.pct)' = 'GDP Growth (%, lag)',
+         'BattleTreat' = 'Battle * Treatment',
+         'BattleAfter' = 'Battle * Post-Treatment')
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "IHS-Transfomed Real FDI", 
+  statistic = 'p.value', conf_level = 0.95, vcov = 'robust'
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "The last four models include country fixed effects.")
+
+# Save the table as an HTML file
+save_kable(output, file = "DID_Summary.html")
+```
+
