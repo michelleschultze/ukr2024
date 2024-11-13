@@ -650,11 +650,59 @@ Merge with master dataset
 master_dataset <- y %>%
   filter(!str_detect(Indicator.Name, "change_pct")) %>%
   full_join(changes, by = c("Country.Name", "year", "Indicator.Name", "value"))
+```
 
+```{r}
+master_dataset <- master_dataset %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Russia" ~ "Russian Federation",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha")))
+# "grenada and south grenadines" overlap between country observations -- drop to be safe
+# WB does not recognize Taiwan unfortunately
+```
+
+```{r}
 #export new master set
 write.csv(master_dataset, "master_dataset2.csv")
 ```
-
 
 
 ##Standardizing country names, timelines, removing duplicates, handling NAs
@@ -673,21 +721,12 @@ library("microsynth")
 library("LowRankQP")
 ```
 
-Handling naming difference for Kyrgyzstan
-```{r ukraine-fill-in-2023}
-#I noticed later that Kyrgyzstan needs standardized names.
-data_master <- master_dataset %>%
-  mutate(Country.Name = case_when(Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
-                                   Country.Name == "Kyrgyzstan" ~ "Kyrgyzstan",
-                                   (Country.Name != "Kyrgyzstan" & Country.Name != "Kyrgyz Republic") ~ Country.Name))
-```
-
 Remove duplicate observations, which are caused by error in data merging (will fix if time)
 ```{r duplicates}
 # Identify duplicates
-duplicate_rows <- data_master %>%
+duplicate_rows <-master_dataset %>%
   filter(Indicator.Name %in% c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Tax revenue (% of GDP)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "Foreign direct investment, net inflows (% of GDP)"),
-         year >= 2000) %>%
+         year >= 1990) %>% #1990 for the 1990 dataset
   group_by(Country.Name, year, Indicator.Name) %>%
   summarise(n = n()) %>%
   filter(n > 1)
@@ -696,7 +735,7 @@ duplicate_rows <- data_master %>%
 print(duplicate_rows)
 
 #Let's just drop the duplicates, plus the errors with Tristan da Cunha and other comma'd territories that got split incorrectly. I will fix these more directly if I have time, but omitting them from the regression just reduces the sample size, which should have a minimal effect on inference.
-data_master <- data_master %>%
+master_dataset <- master_dataset %>%
   filter(!(Country.Name == "Congo, Dem. Rep." & (Indicator.Name == "AirportsCount" | Indicator.Name == "AirportsVolume") & year == 2023))
 ```
 
@@ -704,13 +743,14 @@ I ended up deciding to cut the inference to pre-COVID (2010-2019), cutting out d
 
 The data is called "scm_data" below since it was originally created for the SCM model, but it is used in later unrelated models too.
 ```{r specifications}
-scm_data <- data_master %>%
-  filter(Indicator.Name %in% c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "Foreign direct investment, net inflows (% of GDP)", "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct"),
-         year >= 2000, year <= 2019) %>%
+scm_data <- master_dataset %>%
+  filter(Indicator.Name %in% c("fatalities_y, Violence against civilians", "fatalities_y, Strategic developments", "fatalities_y, Protests", "fatalities_y, Explosions/Remote violence", "fatalities_y, Battles", "count_events_y, Violence against civilians", "count_events_y, Strategic developments", "count_events_y, Protests", "count_events_y, Explosions/Remote violence", "count_events_y, Battles", "count_events_y, All types of violent conflict", "AirportsVolume", "AirportsCount", "GDP growth (annual %)", "Inflation, GDP deflator (annual %)", "passengers_spike_true", "flights_spike_true", "total_passengers_in", "total_passengers_out", "total_flights_in", "total_flights_out", "total_freight_in", "total_freight_out", "Foreign direct investment, net inflows (% of GDP)", "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct", "Merchandise trade (% of GDP)", "Mineral rents (% of GDP)", "Services, value added (% of GDP)", "Agriculture, forestry, and fishing, value added (% of GDP)"),
+         year >= 1990, year <= 2019) %>%     #1990 for the 1990 dataset
   pivot_wider(names_from = Indicator.Name, values_from = value) %>%
   group_by(Country.Name, year) %>%
   summarise_all(~ if (any(!is.na(.))) .[!is.na(.)][1] else NA)
-#Note: you can add variables in the filter above and export the resulting dataset in order to add more columns. for instance, add: , "GDP (current US$)", "flights_in_change_pct", "passengers_in_change_pct"
+#Note: you can add variables in the filter above and export the resulting dataset in order to add more columns. for instance, add: , "Manufacturing, value added (% of GDP)", "Merchandise trade (% of GDP)", "Imports of goods and services (% of GDP)", "Mineral rents (% of GDP)", "Services, value added (% of GDP)", "Agriculture, forestry, and fishing, value added (% of GDP)", "Trade (% of GDP)", "Trade in services (% of GDP)"
+# had to kick out the trade and manufacturing% vars because they had NAs in weird spots
 ```
 
 We have a problem with NA values. Let's fill in all ACLED and flight-count cases with NA with 0, since if they weren't included, there were no events, counts, fatalities, and so on. 
@@ -736,8 +776,38 @@ scm_data_imputed <- scm_data %>%
 scm_data_imputed %>%
   filter(if_any(all_of(variables_to_impute), is.na))
 #Success!
+```
 
+Iraq and El Salvador have weird gaps in the FDI variable in 1990 where 2 singular years don't have data (for each). This is consequential later at least for Iraq, so let's impute those variables as the last observation carried forward.
+Also Turkmenistan has gaps in the %services variable.
+```{r}
+# Apply LOCF for Iraq, El Salvador (FDI), and Turkmenistan (services value added)
+scm_data_imputed <- scm_data_imputed %>%
+  arrange(Country.Name, year) %>%  # Ensure data is sorted by country and year
+  group_by(Country.Name) %>%
+  mutate(
+    # LOCF for Iraq and El Salvador: FDI in the 1990s
+    `Foreign direct investment, net inflows (% of GDP)` = if_else(
+      (Country.Name %in% c("Iraq", "El Salvador")) & year >= 1990 & year < 2000,
+      na.locf(`Foreign direct investment, net inflows (% of GDP)`, na.rm = FALSE),
+      `Foreign direct investment, net inflows (% of GDP)`
+    ),
+    # LOCF for Turkmenistan: Services value added
+    `Services, value added (% of GDP)` = if_else(
+      Country.Name == "Turkmenistan",
+      na.locf(`Services, value added (% of GDP)`, na.rm = FALSE),
+      `Services, value added (% of GDP)`
+    )
+  ) %>%
+  ungroup()
 
+# Check the imputed values for Iraq, El Salvador, and Turkmenistan
+scm_data_imputed %>%
+  filter(Country.Name %in% c("Iraq", "El Salvador", "Turkmenistan")) %>%
+  select(Country.Name, year, `Foreign direct investment, net inflows (% of GDP)`, `Services, value added (% of GDP)`)
+```
+
+```{r}
 #some rows still have NAs. It seems like they are small countries or incorrectly named countries. Let's just drop them for simplicity.
 scm_data_imputed <- na.omit(scm_data_imputed)
 ```
@@ -933,7 +1003,7 @@ log_battle = battle fatalities, logged+1
 
 ```{r save}
 setwd("/Users/michelle/Documents/ukr2024/Replication files")
-write.csv(data, "full_data.csv")
+write.csv(data, "full_data_1990.csv")
 ```
 
 

@@ -1,0 +1,723 @@
+---
+title: "Generalized Synthetic Control"
+author: "Michelle Schultze"
+date: "Oct 20, 2024"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+---
+
+```{r}
+#install.packages("urca")
+library(urca)
+library(dplyr)
+#install.packages("knitr")
+library(knitr)
+library(readr)
+library(Synth)
+#install.packages("microsynth", repos = "http://cran.us.r-project.org")
+#install.packages("LowRankQP", repos = "http://cran.us.r-project.org")
+#install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+library("tidyverse")
+library("microsynth")
+library("LowRankQP")
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data_1990.csv")
+```
+I went back into the data file, keeping data ≥1990 and adding more variables.
+
+Treatment is TRUE if the country experienced a long-term (≥2y) closure of its 
+main airport and a discrete and sustained reopening of the airport. This may be 
+as a result of war or (more rarely, and only in the case of Haiti) a 
+natural disaster.
+```{r}
+# Define the treatment years for each country
+treatment_years <- data.frame(
+  Country.Name = c("Bosnia and Herzegovina", "Kosovo", "Timor Leste", "Haiti", 
+                   "Iraq", "Afghanistan", "Liberia", "Somalia"),
+  Treatment.Year = c(1996, 1999, 2000, 2012, 2003, 2002, 2003, 2010)
+)
+
+# Merge the treatment years into your original dataset
+data2 <- data %>%
+  left_join(treatment_years, by = "Country.Name")
+
+# Create Treatment and Post-Treatment columns
+data2 <- data2 %>%
+  mutate(
+    Treatment = ifelse(year >= as.numeric(Treatment.Year) & !is.na(Treatment.Year), 1, 0),
+    Post_Treatment = ifelse(year > as.numeric(Treatment.Year) & !is.na(Treatment.Year), 1, 0)
+  )
+
+#Only a few countries have enough data for this to work. we have to drop the ones that don't have pre-treatment years.
+# Keep all years for countries that have pre-treatment data or no treatment year
+valid_countries <- data2 %>%
+  group_by(Country.Name) %>%
+  filter(any(year < Treatment.Year) | is.na(Treatment.Year)) %>%
+  pull(Country.Name) %>%  # Extract valid country names
+  unique()
+
+# Filter the original data to keep only valid countries
+data2 <- data2 %>%
+  filter(Country.Name %in% valid_countries) %>%
+  filter(Country.Name != "Somalia")
+```
+
+Though we found 8 examples of this occurring 1990-2019, only 3 of them end up 
+making it into the SCM because we lack enough data to describe a pre-treatment 
+environment for Afghanistan, Timor Leste, Bosnia and Herzegovina, Kosovo, and 
+Somalia. But we did retain Haiti, Liberia, and Iraq. Such a lack of data is to 
+be expected: such detailed data is rare to be collected in war-afflicted 
+countries, especially before 2015.
+
+Handling NAs:
+```{r}
+# Drop specific variables with NAs from the dataset (they're unimportant anyway)
+data2 <- data2 %>%
+  select(-c(log_FDI_n, log_FDI_r, Inflation.GDP.deflator.annual.pct, `GDP deflator (base year varies by country)`, Treatment.Year))
+
+data2_cleaned <- na.omit(data2)
+
+missing_years <- data2_cleaned %>%
+  group_by(Country.Name) %>%
+  summarise(min_year = min(year), max_year = max(year), n_years = n()) %>%
+  filter(n_years != (max_year - min_year + 1))
+
+#El Salvador missing 1995
+
+# Create a function to detect missing years for each country
+missing_years_details <- function(data) {
+  data %>%
+    group_by(Country.Name) %>%
+    summarise(
+      all_years = list(min(year):max(year)),  # Generate the full sequence of years
+      present_years = list(year),             # List of years present in the data
+      missing_years = list(setdiff(all_years[[1]], present_years[[1]]))  # Find missing years
+    ) %>%
+    filter(lengths(missing_years) > 0)  # Keep only countries with missing years
+}
+
+# Apply the function to your cleaned dataset
+missing_years_info <- missing_years_details(data2_cleaned)
+```
+
+#aDID
+
+##total FDI n
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  total_FDI_n ~ Treatment * Post_Treatment + log(GDP_USD) + log(fatalities.y.Battles) | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    x = "Year", y = "Predicted Nominal FDI",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plotA.png", width = 8, height = 6, dpi = 300)
+```
+
+##total FDI r
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  total_FDI_r ~ Treatment * Post_Treatment | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    x = "Year", y = "Predicted Real FDI",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plot_B.png", width = 8, height = 6, dpi = 300)
+```
+
+
+##Nominal GDP
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+data2 <- data2 %>%
+  rename(GDP_USD = `GDP.current.US$`)
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  GDP_USD ~ Treatment * Post_Treatment | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    x = "Year", y = "Predicted Nominal GDP",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plot_C.png", width = 8, height = 6, dpi = 300)
+```
+
+
+# Battle fatalities covariate
+
+
+##total FDI n
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  total_FDI_n ~ Treatment * Post_Treatment + fatalities.y.Battles | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    subtitle = "with battle fatalities covariate",
+    x = "Year", y = "Predicted Nominal FDI",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plotA_BF.png", width = 8, height = 6, dpi = 300)
+```
+
+##total FDI r
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  total_FDI_r ~ Treatment * Post_Treatment + fatalities.y.Battles | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    subtitle = "with battle fatalities covariate",
+    x = "Year", y = "Predicted Real FDI",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plot_B_BF.png", width = 8, height = 6, dpi = 300)
+```
+
+
+##Nominal GDP
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(fixest) # For regression with fixed effects
+library(ggplot2)  # For visualization
+
+#c("GDP.current.US$", "total_FDI_n")
+
+data2 <- data2 %>%
+  rename(GDP_USD = `GDP.current.US$`)
+
+# Estimate the Augmented DID Model with Country and Time Fixed Effects
+model <- feols(
+  GDP_USD ~ Treatment * Post_Treatment + fatalities.y.Battles | Country.Name + year,
+  data = data2
+)
+
+# Summary of the model
+summary(model)
+```
+
+```{r}
+# Load necessary libraries
+#library(fixest)   # For running fixed-effects models
+#library(ggplot2)  # For visualization
+#library(dplyr)    # For data wrangling
+
+# Prepare the dataset: Create Treatment.Year if not already present
+data2 <- data2 %>%
+  group_by(Country.Name) %>%
+  mutate(Treatment.Year = ifelse(Treatment == 1, min(year[Treatment == 1]), NA)) %>%
+  fill(Treatment.Year, .direction = "downup") %>%
+  ungroup()
+
+# Predicted values from the model for plotting
+data2 <- data2 %>%
+  mutate(predicted = predict(model, newdata = data2))
+
+# Create a DID Visualization
+ggplot(data2, aes(x = year, y = predicted, color = Country.Name, group = Country.Name)) +
+  geom_line(size = 1) +
+  geom_vline(aes(xintercept = Treatment.Year), linetype = "dashed", color = "red") + 
+  geom_text(data = data2 %>% filter(Country.Name %in% c("Haiti", "Liberia", "Iraq") & year == max(year)), 
+            aes(label = Country.Name), 
+            hjust = 1, vjust = 0, size = 4, color = "black") +  # Adjust the size of the labels
+  labs(
+    title = "Augmented DID: Treatment Effects across Haiti, Iraq, and Liberia",
+    subtitle = "with battle fatalities covariate",
+    x = "Year", y = "Predicted Nominal GDP",
+    caption = "Dashed lines indicate treatment years for each country."
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggsave("augmented_did_plot_C_BF.png", width = 8, height = 6, dpi = 300)
+```
+
+
+
+
+
+
+
+## Liberia: Gsynth
+
+```{r}
+# Load necessary libraries
+library(gsynth)
+library(dplyr)
+library(tidyr)
+
+# Prepare your dataset
+# Ensure your dataset is filtered for the relevant years (2003-2008) and only contains Liberia and control countries
+data_filtered <- data2_cleaned %>%
+  filter(year >= 2003 & year <= 2008) %>%
+  filter(Country.Name == "Liberia" | Country.Name %in% c("Zimbabwe", "Mali", "Iran")) # Add relevant control countries
+
+# Select only the relevant columns for reshaping
+data_filtered <- data_filtered %>%
+  select(Country.Name, year, Treatment, Post_Treatment, everything()) # Select all other columns
+
+# Reshape the data to long format suitable for gsynth
+data_long <- data_filtered %>%
+  pivot_longer(cols = -c(Country.Name, year, Treatment, Post_Treatment), 
+               names_to = "Indicator", 
+               values_to = "Value")
+
+# Check the reshaped data
+head(data_long)
+
+```
+
+
+
+
+## LIBERIA: Synth breaks
+
+```{r}
+library(Synth)
+library(dplyr)
+
+# Assuming your data is loaded into a data frame called data2_cleaned
+data <- data2_cleaned
+
+# Convert Country.Name to factor
+data$Country.Name <- as.character(data$Country.Name)
+
+# Specify the intervention year and the treated unit (Liberia)
+intervention_year <- 2003
+treated_country <- "Liberia"
+
+# Filter the data for the relevant years (5 years before and 5 years after)
+data_filtered <- data %>%
+  filter(year >= (intervention_year - 5) & year <= (intervention_year + 5))
+
+# Ensure the required columns are numeric
+numeric_columns <- c("GDP.growth.annual.pct", "Foreign.direct.investment.net.inflows.pct.of.GDP", 
+                     "total.flights.in", "total.passengers.out")
+
+# Convert specified columns to numeric, handle warnings
+data_filtered[numeric_columns] <- lapply(data_filtered[numeric_columns], function(x) {
+  as.numeric(as.character(x))  # Ensure conversion from factor/character to numeric
+})
+
+# Prepare the data for the Synth package
+# Specify the dependent variable (outcome variable you want to model, e.g., total.passengers.in)
+outcome_var <- "total.passengers.in"  # Adjust this to your outcome of interest
+
+# Set up the data for Synth
+dataprep_out <- dataprep(
+  foo = as.data.frame(data_filtered),
+  predictors = numeric_columns,
+  dependent = outcome_var,
+  unit.variable = "Country.Name",  # Ensure this is a factor
+  time.variable = "year",
+  treatment.identifier = treated_country,
+  controls.identifier = data_filtered$Country.Name[data_filtered$Country.Name != treated_country],
+  time.predictors.prior = seq(intervention_year - 5, intervention_year - 1),  # 5 years prior
+  time.optimize.ssr = seq(intervention_year - 5, intervention_year - 1),   # Optimize over the same years
+  time.plot = seq(intervention_year - 5, intervention_year + 5)              # Plot the full range
+)
+
+# Run the synthetic control model
+synth_out <- synth(dataprep_out)
+
+# Extract results for visualization and analysis
+synth_tables <- synth.tab(synth.res = synth_out, dataprep.res = dataprep_out)
+
+# Create a plot to visualize the synthetic control results
+path.plot(synth.res = synth_out, dataprep.res = dataprep_out,
+          Ylab = "Total Passengers In", Xlab = "Year", 
+          Main = "Synthetic Control for Airport Reopening in Liberia")
+
+# Print the synthetic control results
+print(synth_tables)
+
+```
+
+
+
+
+
+
+
+
+
+## IRAQ
+
+Prepare the Data for Iraq's Synthetic Control Model
+```{r}
+# Define Iraq's intervention year and pre-treatment start
+intervention_year <- 2003
+pre_treatment_start <- intervention_year - 5
+post_treatment_end <- intervention_year + 5
+
+# Subset data: Keep only years from 5 years before the intervention onward
+data_scm <- data2_cleaned %>%
+  filter(year >= pre_treatment_start & year <= post_treatment_end)
+
+# Separate Iraq's data and donor pool
+iraq_data <- data_scm %>% filter(Country.Name == "Iraq")
+iraq_country <- unique(iraq_data$Country.Name) # for later
+donor_pool <- data_scm %>% 
+  filter(!Country.Name %in% c("Iraq", "Liberia", "Haiti"))
+```
+
+Identify Donor Countries Based on Pre-treatment Trends
+```{r}
+library(dplyr)
+library(tidyr)
+library(scales)  # For standardization
+
+# Key variables for conflict and economic metrics
+key_conflict_vars <- c(
+  "count.events.y.All.types.of.violent.conflict", 
+  "count.events.y.Battles", 
+  "count.events.y.Explosions/Remote.violence", 
+  "fatalities.y.Battles", 
+  "fatalities.y.Violence.against.civilians"
+)
+
+key_economic_vars <- c(
+  "Agriculture.forestry.and.fishing.value.added.pct.of.GDP", 
+  "Mineral.rents.pct.of.GDP", 
+  "Services.value.added.pct.of.GDP", 
+  "Merchandise.trade.pct.of.GDP", 
+  "Foreign.direct.investment.net.inflows.pct.of.GDP"
+)
+
+# Define the weighting factors for conflict and economic metrics
+conflict_weight <- 3
+economic_weight <- 2 
+
+# Pre-treatment period (5 years before intervention)
+pre_treatment_years <- pre_treatment_start:(intervention_year - 1)
+
+# Filter Iraq's data for all relevant years (not just pre-treatment)
+iraq_data <- data_scm %>% 
+  filter(Country.Name == "Iraq") %>% 
+  summarise(across(all_of(c(key_conflict_vars, key_economic_vars)), mean, na.rm = TRUE))
+
+# For donor countries, summarize over the relevant years
+donor_data <- data_scm %>% 
+  filter(!Country.Name %in% c("Iraq", "Liberia", "Haiti")) %>% 
+  group_by(Country.Name) %>% 
+  summarise(across(all_of(c(key_conflict_vars, key_economic_vars)), mean, na.rm = TRUE)) %>% 
+  ungroup()
+
+# Standardize both Iraq's data and the donor countries' data
+iraq_standardized <- iraq_data %>% mutate(across(everything(), rescale))
+donor_standardized <- donor_data %>%
+  mutate(across(all_of(c(key_conflict_vars, key_economic_vars)), rescale))
+
+# Apply weights to conflict and economic variables
+donor_weighted <- donor_standardized %>%
+  mutate(across(all_of(key_conflict_vars), ~ . * conflict_weight)) %>%
+  mutate(across(all_of(key_economic_vars), ~ . * economic_weight))
+
+iraq_weighted <- iraq_standardized %>%
+  mutate(across(all_of(key_conflict_vars), ~ . * conflict_weight)) %>%
+  mutate(across(all_of(key_economic_vars), ~ . * economic_weight))
+
+# Compute the weighted Euclidean distance between Iraq and each donor
+donor_data <- donor_weighted %>%
+  rowwise() %>%
+  mutate(distance = sqrt(sum((c_across(-Country.Name) - iraq_weighted)^2))) %>%
+  ungroup()
+
+# Define the range of years to keep (±5 years around the intervention year)
+range_years <- pre_treatment_start:post_treatment_end
+
+# Step 1: Find countries with complete data within the range of years
+complete_countries <- data_scm %>%
+  filter(year %in% range_years) %>%
+  group_by(Country.Name) %>%
+  filter(n() == length(range_years)) %>%
+  pull(Country.Name)
+
+# Step 2: Filter the donor_data for these complete countries
+donor_data_filtered <- donor_data %>%
+  filter(Country.Name %in% complete_countries)
+
+# Select the top 5 most similar donor countries
+selected_donors <- donor_data_filtered %>%
+  arrange(distance) %>%
+  slice_head(n = 10)
+
+print(selected_donors)
+```
+
+Format Data for microsynth
+```{r}
+# Outcome vars will be c("GDP.current.US$", "total_FDI_n")
+y <- c("GDP.current.US$", "total_FDI_n")
+x <- c(
+    "GDP.growth.annual.pct",  
+#    "Foreign.direct.investment.net.inflows.pct.of.GDP", #factor that goes into the calculation with total FDI
+#    "GDP.current.US$",   #factor that goes into the calculation with total FDI
+#    "total.passengers.in",   #remove the airport-related variables to prevent endogeneity                 
+#    "total.passengers.out",                   
+#    "total.flights.in",                       
+#    "total.flights.out",                      
+#    "total.freight.in",                       
+#    "total.freight.out",                      
+#    "count.events.y.Battles",                 #iraq sadly has no ACLED data for this period
+#    "count.events.y.Protests",                
+#    "count.events.y.Explosions/Remote.violence",  
+#    "count.events.y.Strategic.developments",   
+#    "count.events.y.Violence.against.civilians",  
+#    "fatalities.y.Battles",                   
+#    "fatalities.y.Protests",                  
+#    "fatalities.y.Explosions/Remote.violence",  
+#    "fatalities.y.Strategic.developments",    
+#    "fatalities.y.Violence.against.civilians",  
+    "Services.value.added.pct.of.GDP",
+    "Agriculture.forestry.and.fishing.value.added.pct.of.GDP",
+    "Merchandise.trade.pct.of.GDP",
+    "Mineral.rents.pct.of.GDP",
+    "Services.value.added.pct.of.GDP",
+    "GDP per capita, PPP (constant 2017 international $)",
+    "GDP, PPP (constant 2017 international $)")
+
+# Because we're not matching exactly, we will use match.out.min rather than match.out
+
+donor_countries <- unique(selected_donors$Country.Name)
+combined_countries <- sort(unique(c(iraq_country, donor_countries)))
+
+year_range <- (intervention_year - 5):(intervention_year + 5)
+
+sea1 <- microsynth(as.data.frame(long_data), idvar="Country.Name", timevar="year", intvar="Treatment",
+             start.pre=pre_treatment_start, end.pre=(intervention_year-1), end.post=post_treatment_end,
+             match.out = FALSE,
+             match.out.min = x,
+             match.covar = FALSE,
+             result.var= y, omnibus.var=TRUE,
+             test="lower", use.survey = FALSE, 
+             max.mse = 10,
+             perm=0, jack = 0, check.feas=TRUE, use.backup = TRUE,
+             cal.epsilon = 0.01,
+             n.cores = min(parallel::detectCores(), 2))
+summary(sea1)
+
+plot_microsynth(sea1)
+```
+
