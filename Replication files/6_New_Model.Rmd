@@ -1004,6 +1004,9 @@ ggsave("scatter_regions_4.png", plot = last_plot(), width = 10, height = 6, dpi 
 ```
 
 
+
+
+
 #ESTIMATES FOR UKRAINE 
 Pump Ukraine numbers into the 6a model in cluster 1
 - most significant by accounting for the GDP interaction effects
