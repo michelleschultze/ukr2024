@@ -1,0 +1,1746 @@
+---
+title: "New Model (Replacing Old Specifications)"
+author: "Michelle Schultze"
+date: "Nov 16, 2024"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+---
+
+```{r}
+#install.packages("urca")
+library(urca)
+library(dplyr)
+#install.packages("knitr")
+library(knitr)
+library(readr)
+library(plm)
+library(lmtest)
+library(modelsummary)
+library(kableExtra)
+library(readxl)
+library(naniar)
+library(tidyverse)
+#install.packages("webshot2")
+library(webshot2)
+library(fixest)
+
+setwd('/Users/michelle/Documents/ukr2024/Replication files')
+data <- read_csv("full_data_1990.csv")
+```
+I went back into the data file, keeping data ≥1990 and adding more variables.
+
+##New variables — merge
+FDI variables: we have nominal and real levels loaded in already from WB
+- total_FDI_n
+- total_FDI_r
+
+Population: 
+```{r}
+pop_df <- read_csv("new data (11.16.24) /population.csv")
+pop_df <- pop_df %>%
+  pivot_longer(cols = where(is.numeric), names_to = "year") %>%
+  mutate(value = as.numeric(value)) %>%
+  filter(!is.na(value)) %>%
+  mutate(year = as.numeric(year), 
+         Country.Name = `Country Name`,
+         pop = value) %>%
+  dplyr::select(Country.Name, year, pop) 
+```
+
+Standardize names
+```{r}
+#standardize names:
+pop_df <- pop_df %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha", "U.S.S.R.", "West Germany"))) 
+  #no need to delete aggregated entities (ie. "West Africa") — they'll drop when we merge with the main dataframe!
+
+```
+
+World Bank Regions
+Coding by region will be a useful dummy later, so let's load it in.
+```{r}
+regions_df <- read_csv("new data (11.16.24) /world-regions-according-to-the-world-bank.csv") %>%
+  mutate(year = as.numeric(Year), 
+         Country.Name = Entity,
+         region = `World regions according to WB`) %>%
+  dplyr::select(Country.Name, region) 
+```
+
+Standardize names
+```{r}
+#standardize names:
+regions_df <- regions_df %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha", "U.S.S.R.", "West Germany"))) 
+  #no need to delete aggregated entities (ie. "West Africa") — they'll drop when we merge with the main dataframe!
+
+```
+
+```{r}
+new_data_df <- pop_df %>%
+  right_join(regions_df, by = c("Country.Name"))
+```
+
+Major conflict dummy:
+We've been using ACLED for a while, but this data seems to be unreliable. 
+Let's switch to using a dummy (1,0) that codes whether it's a major conflict 
+or not, and use the Uppsala conflict dataset instead to code these. 
+```{r}
+conflicts_df <- read_csv("new data (11.16.24) /deaths-in-armed-conflicts-based-on-where-they-occurred.csv") %>%
+  mutate(year = as.numeric(Year), 
+         Country.Name = Entity,
+         Major_Conflict = case_when(Deaths > 10000 ~ 1, 
+                                    Deaths <= 10000 ~ 0)) %>%
+  dplyr::select(Country.Name, year, Major_Conflict)  
+```
+- Major conflict considered >10000 deaths in a country/year
+
+Standardize names
+```{r}
+#standardize names:
+conflicts_df <- conflicts_df %>%
+  mutate(Country.Name = case_when(
+    Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
+    Country.Name == "Bahamas" ~ "Bahamas, The",
+    Country.Name == "Cape Verde" ~ "Cabo Verde",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "East Timor" ~ "Timor-Leste",
+    Country.Name == "Egypt" ~ "Egypt, Arab Rep.",
+    Country.Name == "Gambia" ~ "Gambia, The", 
+    Country.Name == "Guinea Bissau" ~ "Guinea-Bissau",
+    Country.Name == "Iran" ~ "Iran, Islamic Rep.",
+    Country.Name == "Ivory Coast (Cote d'Ivoire)" ~ "Cote d'Ivoire",
+    Country.Name == "Kyrgyzstan" ~ "Kyrgyz Republic", 
+    Country.Name == "Laos" ~ "Lao PDR",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Micronesia" ~ "Micronesia, Fed. Sts.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.", 
+    Country.Name == "Saint Kitts and Nevis" ~ "St. Kitts and Nevis",
+    Country.Name == "Saint Lucia" ~ "St. Lucia",
+    Country.Name == "Saint Vincent and Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Saint Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+    Country.Name == "Slovakia" ~ "Slovak Republic",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "Swaziland" ~ "Eswatini",
+    Country.Name == "Syria" ~ "Syrian Arab Republic",
+    Country.Name == "Yemen" ~ "Yemen, Rep.",
+    Country.Name == "Vietnam" ~ "Viet Nam",
+    Country.Name == "Venezuela" ~ "Venezuela, RB",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
+    Country.Name == "Brunei" ~ "Brunei Darussalam",
+    Country.Name == "West Bank and Gaza" ~ "Palestine",
+    Country.Name == "Saint Martin" ~ "St. Martin (French part)",
+    Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
+    Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
+    Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
+    TRUE ~ Country.Name)
+  ) %>%
+  filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha", "U.S.S.R.", "West Germany"))) 
+  #no need to delete aggregated entities (ie. "West Africa") — they'll drop when we merge with the main dataframe!
+
+```
+
+```{r}
+new_data_df <- new_data_df %>%
+  right_join(conflicts_df, by = c("Country.Name", "year"))
+```
+
+Now let's fold these all into the existing dataset.
+```{r}
+new_data_df <- new_data_df %>%
+  filter(year > 1989,
+         year < 2020)
+
+new_data_df %>%
+  group_by(Country.Name) %>%
+  summarize(Count = n()) %>%
+  filter(Count < 31) %>%
+  print(n = 50)
+
+data <- data %>%
+  select(Country.Name, year, `Foreign.direct.investment.net.inflows.pct.of.GDP`, total.flights.in, total.passengers.in, total_FDI_n, total_FDI_r, `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`, total.freight.in)
+
+data <- data %>%
+  left_join(new_data_df, by = c("Country.Name", "year"))
+
+#Remove the random islands and territories leftover in the dataset 
+data <- data %>%
+  filter(!Country.Name %in% c("Aruba", "Hong Kong", "New Caledonia", "French Polynesia", "Cayman Islands", "Bermuda", "Curacao", "Sint Maarten (Dutch part)", "Turks and Caicos Islands"))
+```
+
+##Specify models
+
+#TABLE 1: FDI levels on logged passenger count
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+
+data <- data %>%
+  mutate(log_GDP_mil = log1p(`GDP.current.US$`/1000000))
+
+data <- data %>%
+  mutate(conflict_passengers_interaction = Major_Conflict*lag(log1p(total.passengers.in/10000)),
+         conflict_freight_interaction = Major_Conflict*lag(log1p(total.freight.in/10000)))
+
+data <- data %>%
+  group_by(Country.Name) %>% 
+  mutate(
+    avg_GDP = mean(`GDP.current.US$`, na.rm = TRUE),
+    demeaned_log_GDP = log1p(`GDP.current.US$`/1000000) - log1p(avg_GDP/1000000),
+    GDP_pass_interaction = (demeaned_log_GDP)*lag(log1p(total.passengers.in/10000)),
+    GDP_freight_interaction = demeaned_log_GDP*lag(log1p(total.freight.in/10000))
+  ) %>%
+  ungroup()
+
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+model.4a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+model.5a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_passengers_interaction +
+                    conflict_freight_interaction + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["5a"]] <- model.5a
+```
+
+Now let's include an interaction term with GDP to account for different effects for different levels of GDP in countries
+
+```{r}
+model.6a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + GDP_pass_interaction + GDP_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["6a"]] <- model.6a
+```
+
+```{r}
+model.7a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) +  
+                    log1p(pop) + 
+                    log_GDP_mil + GDP_pass_interaction + GDP_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["7a"]] <- model.7a
+```
+
+```{r}
+model.8a <- feols((total_FDI_n/1000000) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    lag(log1p(total.freight.in/10000)) +  
+                    log1p(pop) + 
+                    Major_Conflict + conflict_passengers_interaction +
+                    conflict_freight_interaction + 
+                    log_GDP_mil + GDP_pass_interaction + GDP_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["8a"]] <- model.8a
+```
+
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'lag(log1p(total.passengers.in/10000))' = 'Passengers in ten thousands (lag/log+1)',
+         'lag(log1p(total.freight.in/10000))' = 'Freight in ten thousand pounds (lag/log+1)',
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passengers",
+         'conflict_freight_interaction' = "Major Conflict * Freight",
+         'GDP_pass_interaction' = "GDP*passengers (demeaned GDP, log/lag pass)",
+         'GDP_freight_interaction' = "GDP*freight (demeaned GDP, log/lag freight)")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in millions", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects (country and year).")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIlevels.html")
+
+# Convert the saved HTML file to an image
+webshot2::webshot(
+  url = "New_OLS_Summary_FDIlevels.html",
+  file = "New_OLS_Summary_FDIlevels.png", 
+  selector = "body", # Targets the table specifically
+  zoom = 2,          # Increases resolution
+  vwidth = 1200      # Adjusts width for better clarity
+)
+
+```
+
+##Plug in Ukraine values
+```{r}
+data %>%
+  filter(Country.Name == "Ukraine") %>% 
+  dplyr::select(Country.Name, year, avg_GDP) 
+
+ukraine_data <- data.frame(
+  Country.Name = c("Ukraine", "Ukraine"),
+  year = c(2024, 2025),
+  total.passengers.in = c(0, 5000), # Estimated passengers in 2024 and 2025
+  total.freight.in = c(7000, 50000),
+  log_GDP_mil = c(log1p(184.1*1000), log1p(189.827*1000)), # GDP in millions
+  pop = c(37937821, 38759076), # Population
+  Major_Conflict = c(0,0),
+  freight_dummy = c(1,1),
+  pass_dummy = c(0,1),
+  region = c("Europe and Central Asia (WB)", "Europe and Central Asia (WB)")
+) %>%
+  mutate_at(vars(2:9), as.numeric) %>%
+  mutate(norm_time = as.numeric(year) - 1989,
+         conflict_passengers_interaction = Major_Conflict*lag(log1p(total.passengers.in/10000)),
+         conflict_freight_interaction = Major_Conflict*lag(log1p(total.freight.in/10000)),
+         demeaned_log_GDP = log_GDP_mil - log1p(97309830880/1000000),
+    GDP_pass_interaction = (demeaned_log_GDP)*lag(log1p(total.passengers.in/10000)),
+    GDP_freight_interaction = (demeaned_log_GDP)*lag(log1p(total.freight.in/10000)),
+    lag(log1p(total.passengers.in/10000)),
+    lag(log1p(total.freight.in/10000)),
+    log1p(pop)
+  )
+
+#we are plugging in years that aren't in the original dataset. therefore, fixed effects involving years will be an average of 2017-2019, which is the next best option. 
+fixed_effects <- fixef(model.8a)
+country_FE <- fixed_effects$Country.Name["Ukraine"]
+year_FE <- fixed_effects$year[c("2017", "2018", "2019")]
+year_FE <- mean(year_FE)
+region_FE <- fixed_effects$region[c("Europe and Central Asia (WB)_2017", "Europe and Central Asia (WB)_2018", "Europe and Central Asia (WB)_2019")]
+region_FE <- mean(region_FE)
+
+model.8a$coefficients[1:9]
+pass_log_coeff <- mean(model.8a$coefficients[1])
+freight_log_coeff <- mean(model.8a$coefficients[2])
+pop_log_coeff <- mean(model.8a$coefficients[3])
+GDP_log_coeff <- mean(model.8a$coefficients[4])
+GDP_pass_interaction_coeff <- mean(model.8a$coefficients[5])
+GDP_freight_interaction_coeff <- mean(model.8a$coefficients[6])
+Country_trends_coeff <- mean(model.8a$coefficients["norm_time:Country.NameUkraine"])
+Major_Conflict_coeff <- mean(model.8a$coefficients[7])
+conflict_passengers_interaction_coeff <- mean(model.8a$coefficients[8])
+conflict_freight_interaction_coeff <- mean(model.8a$coefficients[9])
+
+#Estimate manually
+FDI_est <- ukraine_data %>%
+  mutate(FDI_est = 
+((pass_log_coeff*lag(log1p(total.passengers.in/10000)) + 
+                    freight_log_coeff*lag(log1p(total.freight.in/10000)) + 
+                    pop_log_coeff*log1p(pop) + 
+                    GDP_log_coeff*log_GDP_mil + 
+                    GDP_pass_interaction_coeff*GDP_pass_interaction + 
+                    GDP_freight_interaction_coeff*GDP_freight_interaction +
+                    Major_Conflict_coeff*Major_Conflict +
+                    conflict_passengers_interaction_coeff*conflict_passengers_interaction + 
+                    conflict_freight_interaction_coeff*conflict_freight_interaction +
+                         Country_trends_coeff*norm_time +
+                         country_FE + year_FE  + region_FE)))
+
+
+# Extract the FDI_est values for 2024 and 2025
+fdi_2024 <- as.numeric(FDI_est$FDI_est[FDI_est$Country.Name == "Ukraine" & FDI_est$year == 2024])
+fdi_2025 <- as.numeric(FDI_est$FDI_est[FDI_est$Country.Name == "Ukraine" & FDI_est$year == 2025])
+fdi_predicted_increase <- fdi_2025 - fdi_2024
+fdi_predicted_increase
+```
+
+
+
+#TABLE 2: US carrier freight and passenger dummies 
+Let's generate dummies for the presence of US carriers 
+```{r}
+data <- data %>%
+  mutate(
+    flights_dummy = ifelse(total.flights.in > 0, 1, 0),
+    pass_dummy = ifelse(total.passengers.in > 0, 1, 0),
+    freight_dummy = ifelse(total.freight.in > 0, 1, 0)
+  )
+```
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) +
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(conflict_passengers_interaction = Major_Conflict*lag(pass_dummy),
+         conflict_freight_interaction = Major_Conflict*lag(freight_dummy))
+
+model.5a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_passengers_interaction +
+                    conflict_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["5a"]] <- model.5a
+```
+
+
+Now let's include an interaction term with GDP to account for different effects for different levels of GDP in countries
+
+```{r}
+data <- data %>%
+  group_by(Country.Name) %>% 
+  mutate(
+    avg_GDP = mean(`GDP.current.US$`, na.rm = TRUE),
+    demeaned_log_GDP = log1p(`GDP.current.US$`/1000000) - log1p(avg_GDP/1000000),
+    GDP_pass_interaction = (demeaned_log_GDP)*lag(pass_dummy),
+    GDP_freight_interaction = demeaned_log_GDP*lag(freight_dummy)
+  ) %>%
+  ungroup()
+
+model.6a <- feols((total_FDI_n/1000000) ~ 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    GDP_pass_interaction + GDP_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["6a"]] <- model.6a
+```
+
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.7a <- feols((total_FDI_n/1000000) ~ 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    GDP_pass_interaction + GDP_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["7a"]] <- model.7a
+```
+
+
+```{r}
+model.8a <- feols((total_FDI_n/1000000) ~ 
+                    lag(pass_dummy) + lag(freight_dummy) +
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    GDP_pass_interaction + GDP_freight_interaction + 
+                    Major_Conflict + conflict_passengers_interaction +
+                    conflict_freight_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["8a"]] <- model.8a
+```
+
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a', '6a', '7a', '8a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'lag(pass_dummy)' = 'US carrier passengers present?',
+         'lag(freight_dummy)' = 'US carrier freight present?',
+         'Major_Conflict' = 'Major Conflict present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passenger presence",
+         'conflict_freight_interaction' = "Major Conflict * Freight presence",
+         'GDP_pass_interaction' = "GDP*passengers (demeaned GDP, pass presence)",
+         'GDP_freight_interaction' = "GDP*freight (demeaned GDP, freight presence)")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in millions", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects (country and year).")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIlevels_both_dummies.html")
+
+# Convert the saved HTML file to an image
+webshot2::webshot(
+  url = "New_OLS_Summary_FDIlevels_both_dummies.html",
+  file = "New_OLS_Summary_FDIlevels_both_dummies.png", 
+  selector = "body", # Targets the table specifically
+  zoom = 2,          # Increases resolution
+  vwidth = 1200      # Adjusts width for better clarity
+)
+```
+
+#Plugging in Ukraine values
+```{r}
+ukraine_data <- ukraine_data %>%
+  mutate(GDP_pass_interaction = (demeaned_log_GDP)*pass_dummy,
+    GDP_freight_interaction = (demeaned_log_GDP)*freight_dummy)
+
+#we are plugging in years that aren't in the original dataset. therefore, fixed effects involving years will be an average of 2017-2019, which is the next best option. 
+fixed_effects <- fixef(model.8a)
+country_FE <- fixed_effects$Country.Name["Ukraine"]
+year_FE <- fixed_effects$year[c("2017", "2018", "2019")]
+year_FE <- mean(year_FE)
+region_FE <- fixed_effects$region[c("Europe and Central Asia (WB)_2017", "Europe and Central Asia (WB)_2018", "Europe and Central Asia (WB)_2019")]
+region_FE <- mean(region_FE)
+
+model.6a$coefficients[1:6]
+pass_log_coeff <- mean(model.8a$coefficients[1])
+freight_log_coeff <- mean(model.8a$coefficients[2])
+pop_log_coeff <- mean(model.8a$coefficients[3])
+GDP_log_coeff <- mean(model.8a$coefficients[4])
+GDP_pass_interaction_coeff <- mean(model.8a$coefficients[5])
+GDP_freight_interaction_coeff <- mean(model.8a$coefficients[6])
+Country_trends_coeff <- mean(model.8a$coefficients["norm_time:Country.NameUkraine"])
+Major_Conflict_coeff <- mean(model.8a$coefficients[7])
+conflict_passengers_interaction_coeff <- mean(model.8a$coefficients[8])
+conflict_freight_interaction_coeff <- mean(model.8a$coefficients[9])
+
+#Estimate manually
+FDI_est <- ukraine_data %>%
+  mutate(FDI_est = 
+((pass_log_coeff*pass_dummy + 
+                    freight_log_coeff*freight_dummy + 
+                    pop_log_coeff*log1p(pop) + 
+                    GDP_log_coeff*log_GDP_mil + 
+                    GDP_pass_interaction_coeff*GDP_pass_interaction + 
+                    GDP_freight_interaction_coeff*GDP_freight_interaction +
+                    Major_Conflict_coeff*Major_Conflict +
+                    conflict_passengers_interaction_coeff*conflict_passengers_interaction + 
+                    conflict_freight_interaction_coeff*conflict_freight_interaction +
+                         Country_trends_coeff*norm_time +
+                         country_FE + year_FE  + region_FE)))
+
+
+# Extract the FDI_est values for 2024 and 2025
+fdi_2024 <- as.numeric(FDI_est$FDI_est[FDI_est$Country.Name == "Ukraine" & FDI_est$year == 2024])
+fdi_2025 <- as.numeric(FDI_est$FDI_est[FDI_est$Country.Name == "Ukraine" & FDI_est$year == 2025])
+fdi_predicted_increase <- fdi_2025 - fdi_2024
+fdi_predicted_increase
+```
+
+
+#FIGURES: ggplots
+
+```{r}
+# Load necessary packages
+library(ggplot2)
+library(dplyr)
+
+# Create a plot showing the relationship between passengers and FDI
+# We can either show a region-wise plot or a general plot
+ggplot(data, aes(x = (total.passengers.in/10000), y = (total_FDI_n/1000000))) +
+  geom_point(alpha = 0.5) +  # Scatter plot for actual data
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Add a linear fit line for clarity
+  labs(
+    title = "Relationship Between Passengers and FDI",
+    x = "Passengers in Ten Thousands",
+    y = "Nominal FDI Net Inflows (Current $US, millions)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_0.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Create a plot showing the relationship between passengers and FDI
+# We can either show a region-wise plot or a general plot
+ggplot(data, aes(x = log1p(total.passengers.in/10000), y = (total_FDI_n/1000000))) +
+  geom_point(alpha = 0.5) +  # Scatter plot for actual data
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +  # Add a linear fit line for clarity +
+  labs(
+    title = "Relationship Between Passengers and FDI",
+    x = "Log of Passengers (log1p(total.passengers.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_1.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(data, aes(x = log1p(total.passengers.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  facet_wrap(~ region) +  # This will create a separate plot for each region
+  labs(
+    title = "Relationship Between Passengers and FDI by Region",
+    x = "Log of Passengers (log1p(total.passengers.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_2.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(data, aes(x = log1p(total.freight.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  facet_wrap(~ region) +  # This will create a separate plot for each region
+  labs(
+    title = "Relationship Between Logged Freight and FDI by Region",
+    x = "Log of Freight in Ten Thousand Pounds (lbs) (log1p(total.freight.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_3.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(eurasia_subset, aes(x = log1p(total.passengers.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  facet_wrap(~ region) +  # This will create a separate plot for each region
+  labs(
+    title = "Relationship Between Logged Passengers and FDI",
+    x = "Log of Passengers (log1p(total.passengers.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)",
+    subtitle = "Regional subset: Europe and Central Asia"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_3_eu.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(eurasia_subset, aes(x = log1p(total.freight.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  facet_wrap(~ region) +  # This will create a separate plot for each region
+  labs(
+    title = "Relationship Between Logged Freight and FDI",
+    x = "Log of Freight in Ten Thousand Pounds (lbs) (log1p(total.freight.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)",
+    subtitle = "Regional subset: Europe and Central Asia"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_4_eu.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(data, aes(x = log1p(total.passengers.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  labs(
+    title = "Relationship Between Logged Passengers and FDI",
+    x = "Log of Passengers (log1p(total.passengers.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)",
+    subtitle = "All countries included"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_3.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+
+# Optional: You can also facet the plot by region or year to visualize differences
+# Example: Faceting by region
+ggplot(data, aes(x = log1p(total.freight.in/10000), y = ((total_FDI_n/1000000)))) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue") +
+  labs(
+    title = "Relationship Between Logged Freight and FDI",
+    x = "Log of Freight in Ten Thousand Pounds (lbs) (log1p(total.freight.in/10000))",
+    y = "Nominal FDI Net Inflows (Current $US, millions)",
+    subtitle = "All countries included"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Export the plot to a PNG file
+ggsave("scatter_regions_4.png", plot = last_plot(), width = 10, height = 6, dpi = 300)
+```
+
+
+#ESTIMATES FOR UKRAINE 
+Pump Ukraine numbers into the 6a model in cluster 1
+- most significant by accounting for the GDP interaction effects
+- Ukraine may have similarities to countries outside of Eurasia, so include the world
+- write down how many projected passengers, projected GDP, etc
+
+Ok now also pump Ukraine numbers into the 6a model in cluster 2
+
+#Deprecated: FDI/pop as the dependent
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/pop) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI per capita"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/pop) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI per capita"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/pop) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI per capita"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((total_FDI_n/pop) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI per capita"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(passll = lag(log1p(total.passengers.in/10000)),
+         conflict_passengers_interaction = Major_Conflict*lag(log1p(total.passengers.in/10000)))
+
+model.5a <- feols((total_FDI_n/pop) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_passengers_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI per capita"]][["5a"]] <- model.5a
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'lag(log1p(total.passengers.in/10000))' = 'Passengers in ten thousands (lag/log+1)',
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passengers")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI per capita", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects and are controlled for by logged nominal GDP in millions of current $US.")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIPerCap.html")
+```
+
+#Deprecated: FDI/GDP
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((Foreign.direct.investment.net.inflows.pct.of.GDP) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["FDI as a percent of GDP"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((Foreign.direct.investment.net.inflows.pct.of.GDP) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["FDI as a percent of GDP"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((Foreign.direct.investment.net.inflows.pct.of.GDP) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["FDI as a percent of GDP"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((Foreign.direct.investment.net.inflows.pct.of.GDP) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["FDI as a percent of GDP"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(passll = lag(log1p(total.passengers.in/10000)),
+         conflict_passengers_interaction = Major_Conflict*lag(log1p(total.passengers.in/10000)))
+
+model.5a <- feols((Foreign.direct.investment.net.inflows.pct.of.GDP) ~ 
+                    lag(log1p(total.passengers.in/10000)) + 
+                    log1p(pop) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_passengers_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["FDI as a percent of GDP"]][["5a"]] <- model.5a
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'lag(log1p(total.passengers.in/10000))' = 'Passengers in ten thousands (lag/log+1)',
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passengers")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "FDI as a percent of GDP", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects (country and year).")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIpercentGDP.html")
+```
+
+
+#Deprecated: Just passenger presence (simulates clean reopening to US passengers)
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) +
+                    lag(pass_dummy) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(conflict_passengers_interaction = Major_Conflict*lag(pass_dummy))
+
+model.5a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(pass_dummy) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_passengers_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["5a"]] <- model.5a
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'lag(pass_dummy)' = 'US carrier passengers present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passenger presence")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in millions", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects and are controlled for by logged nominal GDP in millions of current $US.")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIlevels_pass_dummy.html")
+```
+
+#Deprecated: Just flights presence (simulates general reopening of airport)
+
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) +
+                    lag(flights_dummy) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(flights_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(flights_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(flights_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(conflict_flights_interaction = Major_Conflict*lag(flights_dummy))
+
+model.5a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(flights_dummy) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_flights_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["5a"]] <- model.5a
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'lag(flights_dummy)' = 'US carrier flights present?',
+         'conflict_flights_interaction' = "Major Conflict * Flights presence")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in millions", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects and are controlled for by logged nominal GDP in millions of current $US.")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIlevels_flights_dummy.html")
+```
+
+
+#Deprecated: Just Freight reopening
+
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) +
+                    lag(freight_dummy) + 
+                    log_GDP_mil | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["1a"]] <- model.1a
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(freight_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["2a"]] <- model.2a
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(freight_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["3a"]] <- model.3a
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(freight_dummy) + 
+                    log_GDP_mil + 
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year, 
+                         cluster = ~Country.Name, 
+                         data = eurasia_subset)
+models[["Nominal FDI in millions"]][["4a"]] <- model.4a
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(conflict_freight_interaction = Major_Conflict*lag(freight_dummy))
+
+model.5a <- feols((total_FDI_n/1000000) ~ 
+                    log1p(pop) + 
+                    lag(freight_dummy) + 
+                    log_GDP_mil + 
+                    Major_Conflict + conflict_flights_interaction +
+                         norm_time : Country.Name | 
+                         Country.Name + year  + region^year^year, 
+                         cluster = ~Country.Name, 
+                         data = data)
+models[["Nominal FDI in millions"]][["5a"]] <- model.5a
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'lag(freight_dummy)' = 'US carrier freight present?',
+         'conflict_freight_interaction' = "Major Conflict * Freight presence")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in millions", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects and are controlled for by logged nominal GDP in millions of current $US.")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDIlevels_freight_dummy.html")
+```
+
+
+
+
+
+#Deprecated: we shouldn't estimate these with logs because of the negative values of FDI. Below is the same model but with LOGGED nominal FDI in millions
+
+
+Create list to store the models
+```{r}
+models <- NA
+models <- list()
+hsd_testing <- NA
+hsd_testing <- list()
+```
+
+Create a normalized time variable to handle "country-specific trends"
+```{r}
+data <- data %>%
+  mutate(norm_time = year - 1989)
+```
+
+Start with TW fixed effects
+Dep var: FDI nominal
+Indep: log+1 lagged passenger level
+Covariates: log population
+GDP: total real/nominal GDP (match the other side) `GDP.current.US$`, `GDP, PPP (constant 2017 international $)`
+Country/Time fixed effects 
+```{r}
+model.1a <- lm(log1p(total_FDI_n/1000000) ~ lag(log1p(total.passengers.in/10000)) + log1p(pop) + log_GDP_mil + factor(Country.Name) + factor(year), data = data)
+models[["Nominal FDI in Millions, log+1"]][["1a"]] <- model.1a
+hsd_testing[["Nominal FDI in Millions, log+1"]][["1a"]] <- bptest(model.1a)
+```
+
+Then add the country-specific trends:
+Account for spurious effects: Country-specific trends: 
+t=year-1989 (normalize, as a scalar) * vector of country-fixed effects
+```{r}
+model.2a <- lm(log1p(total_FDI_n/1000000) ~ lag(log1p(total.passengers.in/10000)) + log1p(pop) + log_GDP_mil + factor(Country.Name) + factor(year) + norm_time*factor(Country.Name), data = data)
+models[["Nominal FDI in Millions, log+1"]][["2a"]] <- model.2a
+hsd_testing[["Nominal FDI in Millions, log+1"]][["2a"]] <- bptest(model.2a)
+```
+
+Then add the region-by-year dummies  
+Interact year dummies with region dummies → restrict comparisons to within each region 
+If the SE blows up it’s probably too much 
+```{r}
+model.3a <- lm(log1p(total_FDI_n/1000000) ~ lag(log1p(total.passengers.in/10000)) + log1p(pop) + log_GDP_mil + factor(Country.Name) + factor(year) + norm_time*factor(Country.Name) + factor(region)*factor(year), data = data)
+models[["Nominal FDI in Millions, log+1"]][["3a"]] <- model.3a
+hsd_testing[["Nominal FDI in Millions, log+1"]][["3a"]] <- bptest(model.3a)
+```
+
+Then pull out whatever Ukraine region 
+```{r}
+eurasia_subset <- data %>%
+  filter(region == "Europe and Central Asia (WB)")
+
+model.4a <- lm(log1p(total_FDI_n/1000000) ~ lag(log1p(total.passengers.in/10000)) + log1p(pop) + log_GDP_mil + factor(Country.Name) + factor(year) + norm_time*factor(Country.Name), data = eurasia_subset)
+models[["Nominal FDI in Millions, log+1"]][["4a"]] <- model.4a
+hsd_testing[["Nominal FDI in Millions, log+1"]][["4a"]] <- bptest(model.4a)
+```
+
+Major conflict dummy + Major conflict * log passengers variable interaction 
+```{r}
+data <- data %>%
+  mutate(passll = lag(log1p(total.passengers.in/10000)),
+         conflict_passengers_interaction = Major_Conflict*lag(log1p(total.passengers.in/10000)))
+
+model.5a <- lm(log1p(total_FDI_n/1000000) ~ lag(log1p(total.passengers.in/10000)) + log1p(pop) + log_GDP_mil + factor(Country.Name) + factor(year) + norm_time*factor(Country.Name) + factor(region)*factor(year) + Major_Conflict + conflict_passengers_interaction, data = data)
+models[["Nominal FDI in Millions, log+1"]][["5a"]] <- model.5a
+hsd_testing[["Nominal FDI in Millions, log+1"]][["5a"]] <- bptest(model.5a)
+```
+
+##Merge into a single table and export it
+```{r}
+models_unlisted <- unlist(models, recursive=FALSE)
+names(models_unlisted) <- c('1a', '2a', '3a', '4a', '5a')
+
+cm <- c( '(Intercept)' = 'Constant', 
+         'lag(log1p(total.passengers.in/10000))' = 'Passengers in ten thousands (lag/log+1)',
+         'log1p(pop)' = 'Population (log+1)',
+         'log_GDP_mil' = 'Nominal GDP (current US$ in millions, log+1)',
+         'Major_Conflict' = 'Major Conflict present?',
+         'conflict_passengers_interaction' = "Major Conflict * Passengers")
+
+# Generate the model summary
+output <- msummary(
+  models_unlisted, output = 'kableExtra', coef_map = cm, stars = TRUE, 
+  gof_omit = 'IC|Log|Adj', title = "Nominal FDI in Millions, log+1", 
+  statistic = 'p.value', conf_level = 0.95, 
+  vcov = ~Country.Name
+)
+
+output <- output %>%
+  kableExtra::footnote(general = "All models include two-way fixed effects and are controlled for by nominal GDP in current $US.")
+
+# Save the table as an HTML file
+save_kable(output, file = "New_OLS_Summary_FDImillionslog.html")
+```
+
+
+
+
+
+##Ukraine data import
+
+##Ukraine data forecasts
+
+##Graphs with Ukraine forecast specified
+
+
+

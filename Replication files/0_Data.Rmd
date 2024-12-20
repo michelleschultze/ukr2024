@@ -203,7 +203,7 @@ bigset %>%
 bigset <- bigset %>%
   mutate(Country.Name = case_when(
     Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
-    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
     Country.Name == "Bahamas" ~ "Bahamas, The",
     Country.Name == "Cape Verde" ~ "Cabo Verde",
     Country.Name == "Czech Republic" ~ "Czechia",
@@ -234,11 +234,33 @@ bigset <- bigset %>%
     Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
     Country.Name == "Brunei" ~ "Brunei Darussalam",
     Country.Name == "West Bank and Gaza" ~ "Palestine",
-    Country.Name == "Russia" ~ "Russian Federation",
     Country.Name == "Saint Martin" ~ "St. Martin (French part)",
     Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
     Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
     Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
     TRUE ~ Country.Name)
   ) %>%
   filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha")))
@@ -656,7 +678,7 @@ master_dataset <- y %>%
 master_dataset <- master_dataset %>%
   mutate(Country.Name = case_when(
     Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
-    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
     Country.Name == "Bahamas" ~ "Bahamas, The",
     Country.Name == "Cape Verde" ~ "Cabo Verde",
     Country.Name == "Czech Republic" ~ "Czechia",
@@ -683,15 +705,37 @@ master_dataset <- master_dataset %>%
     Country.Name == "Vietnam" ~ "Viet Nam",
     Country.Name == "Venezuela" ~ "Venezuela, RB",
     Country.Name == "Turkey" ~ "Turkiye",
-    Country.Name == "Hong Kong" ~ "Hong Kong SAR, China",
-    Country.Name == "Macau" ~ "Macao SAR, China",
+    Country.Name == "Hong Kong (SAR)" ~ "Hong Kong SAR, China",
+    Country.Name == "Macau (SAR)" ~ "Macao SAR, China",
     Country.Name == "Brunei" ~ "Brunei Darussalam",
     Country.Name == "West Bank and Gaza" ~ "Palestine",
-    Country.Name == "Russia" ~ "Russian Federation",
     Country.Name == "Saint Martin" ~ "St. Martin (French part)",
     Country.Name == "Saint-Martin" ~ "St. Martin (French part)",
     Country.Name == "Sint Maarten" ~ "Sint Maarten (Dutch part)",
     Country.Name == "Saint-Barthelemy" ~ "Saint Barthelemy",
+    Country.Name == "Russian Federation" ~ "Russia",
+    Country.Name == "Iran, Islamic Rep." ~ "Iran",
+    Country.Name == "Brunei Darussalam" ~ "Brunei",
+    Country.Name == "Congo (Kinshasa)" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo (Brazaville)" ~ "Congo, Rep.",
+    Country.Name == "Democratic Republic of Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Republic of Congo" ~ "Congo, Rep.",
+    Country.Name == "Czech Republic" ~ "Czechia",
+    Country.Name == "Egypt, Arab Rep." ~ "Egypt",
+    Country.Name == "Hong Kong SAR, China" ~ "Hong Kong",
+    Country.Name == "Ivory Coast" ~ "Cote d'Ivoire",
+    Country.Name == "Lao PDR" ~ "Laos", 
+    Country.Name == "Macao SAR, China" ~ "Macau",
+    Country.Name == "Macedonia" ~ "North Macedonia",
+    Country.Name == "Slovak Republic" ~ "Slovakia",
+    Country.Name == "South Korea" ~ "Korea, Rep.",
+    Country.Name == "North Korea" ~ "Korea, Dem. People's Rep.",
+    Country.Name == "Syrian Arab Republic" ~ "Syria",
+    Country.Name == "Turkey" ~ "Turkiye",
+    Country.Name == "Venezuela, RB" ~ "Venezuela",
+    Country.Name == "Viet Nam" ~ "Vietnam",
+    Country.Name == "Kyrgyz Republic" ~ "Kyrgyzstan",
+    Country.Name == "Yemen, Rep." ~ "Yemen",
     TRUE ~ Country.Name)
   ) %>%
   filter(!(Country.Name %in% c("European Union", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)", "South Asia", "Sub-Saharan Africa (excluding high income)", "Grenada and South Grenadines", "Saint Helena, Ascension and Tristan da Cunha")))
@@ -735,8 +779,8 @@ duplicate_rows <-master_dataset %>%
 print(duplicate_rows)
 
 #Let's just drop the duplicates, plus the errors with Tristan da Cunha and other comma'd territories that got split incorrectly. I will fix these more directly if I have time, but omitting them from the regression just reduces the sample size, which should have a minimal effect on inference.
-master_dataset <- master_dataset %>%
-  filter(!(Country.Name == "Congo, Dem. Rep." & (Indicator.Name == "AirportsCount" | Indicator.Name == "AirportsVolume") & year == 2023))
+#master_dataset <- master_dataset %>%
+#  filter(!(Country.Name == "Congo, Dem. Rep." & (Indicator.Name == "AirportsCount" | Indicator.Name == "AirportsVolume") & year == 2023))
 ```
 
 I ended up deciding to cut the inference to pre-COVID (2010-2019), cutting out data measurement issues in the COVID period and as a result of the Russo-Ukraine war. Therefore, I cut much of my processing regarding a lack of 2023 data entries, especially if the code chunk was purely about this issue.
@@ -903,7 +947,7 @@ ppp <- ppp %>%
 ppp <- ppp %>%
   mutate(Country.Name = case_when(
     Country.Name == "Democratic Republic of the Congo" ~ "Congo, Dem. Rep.",
-    Country.Name == "Congo" ~ "Congo, Dem. Rep.",
+    Country.Name == "Congo" ~ "Congo, Rep.",
     Country.Name == "Bahamas" ~ "Bahamas, The",
     Country.Name == "Cape Verde" ~ "Cabo Verde",
     Country.Name == "Czech Republic" ~ "Czechia",

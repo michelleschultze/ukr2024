@@ -31,6 +31,30 @@ data <- read_csv("full_data_1990.csv")
 ```
 I went back into the data file, keeping data ≥1990 and adding more variables.
 
+#New specification
+
+
+##Make any new variables needed
+FDI variables
+Population
+Major conflict dummy
+
+##Specify models
+
+##Merge into a single table and export it
+
+##Ukraine data import
+
+##Ukraine data forecasts
+
+##Graphs with Ukraine forecast specified
+
+
+
+
+
+#Deprecated
+
 Treatment is TRUE if the country experienced a long-term (≥2y) closure of its 
 main airport and a discrete and sustained reopening of the airport. This may be 
 as a result of war or (more rarely, and only in the case of Haiti) a 
